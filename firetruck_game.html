@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Fire Hero Squad - Toddler Fire Engine Game</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#222; font-family: 'Courier New', monospace; }
+  #gameWrap { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { background:#87CEEB; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; max-width:100%; max-height:100%; touch-action:none; }
+</style>
+</head>
+<body>
+<div id="gameWrap"><canvas id="game" width="960" height="720"></canvas></div>
+
+<script>
+/* =========================================================================
+   FIRE HERO SQUAD - Retro Pixel Toddler Game
+   Single-file HTML5 Canvas game. Tap the fires to put them out!
+   ========================================================================= */
+
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const W = 960, H = 720;
+
+/* ------------- responsive scaling for iPad ------------- */
+function fit() {
+  const r = Math.min(window.innerWidth / W, window.innerHeight / H);
+  cv.style.width  = (W * r) + 'px';
+  cv.style.height = (H * r) + 'px';
+}
+window.addEventListener('resize', fit); fit();
+
+/* ------------- simple audio via WebAudio (no asset files) ------------- */
+let audioCtx;
+function beep(freq=440, dur=0.15, type='square', vol=0.15){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.stop(audioCtx.currentTime + dur);
+  }catch(e){}
+}
+const SFX = {
+  splash: ()=>{ beep(800,0.08,'sine',0.2); setTimeout(()=>beep(500,0.12,'sine',0.15),60); },
+  click:  ()=>beep(660,0.08,'square',0.12),
+  cheer:  ()=>{ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,0.18,'triangle',0.18), i*120)); },
+  siren:  ()=>{ beep(700,0.15,'sawtooth',0.1); setTimeout(()=>beep(500,0.15,'sawtooth',0.1),150); }
+};
+
+/* ------------- pixel drawing helpers ------------- */
+function px(x,y,c,s=1){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,s,s); }
+function rect(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w,h); }
+
+/* draw pixel art from a string-grid; key maps char->color */
+function drawSprite(grid, x, y, scale, key){
+  for(let r=0; r<grid.length; r++){
+    const row = grid[r];
+    for(let c=0; c<row.length; c++){
+      const k = row[c];
+      if(k===' '||k==='.') continue;
+      const color = key[k];
+      if(!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(x + c*scale, y + r*scale, scale, scale);
+    }
+  }
+}
+
+/* ------------- character options (toddler picks) ------------- */
+const HAIR    = [{id:'brown',c:'#6b3410'},{id:'blonde',c:'#f0d264'},{id:'red',c:'#d33a1a'},{id:'black',c:'#222'}];
+const FACE    = [{id:'happy'},{id:'wink'},{id:'cool'},{id:'silly'}];
+const COSTUME = [{id:'red',c:'#d62828',cd:'#9b1a1a'},{id:'blue',c:'#2a6fd6',cd:'#1c4f9e'},{id:'yellow',c:'#f5b400',cd:'#c98a00'},{id:'pink',c:'#ee5a8a',cd:'#b53a66'}];
+const HAT     = [{id:'classic',c:'#d62828'},{id:'gold',c:'#f5b400'},{id:'silver',c:'#c0c0c0'},{id:'pink',c:'#ee5a8a'}];
+const PET     = [{id:'dog',label:'🐕'},{id:'cat',label:'🐈'},{id:'bird',label:'🐦'},{id:'none',label:'—'}];
+const TRUCK   = [{id:'red',c:'#d62828',cd:'#7a1414'},{id:'blue',c:'#2a6fd6',cd:'#143c80'},{id:'yellow',c:'#f5b400',cd:'#a06f00'},{id:'green',c:'#3aa552',cd:'#1f6b32'}];
+const SCENES  = [
+  {id:'town',  name:'TOWN',   sky:'#87CEEB', ground:'#7d5a3a', accent:'#a37b52'},
+  {id:'forest',name:'FOREST', sky:'#9ed8e8', ground:'#3e7a3a', accent:'#2a5e2a'},
+  {id:'city',  name:'CITY',   sky:'#ffb88a', ground:'#5a5a6a', accent:'#3e3e4e'},
+  {id:'beach', name:'BEACH',  sky:'#a8e6f0', ground:'#f5d98a', accent:'#e0bd64'}
+];
+
+/* player selection state */
+const sel = { hair:0, face:0, costume:0, hat:0, pet:0, truck:0, scene:0 };
+
+/* ------------- game state ------------- */
+let scene = 'menu'; // menu | select | play | done
+let fires = [];
+let score = 0;
+let timeLeft = 30;
+let lastTime = performance.now();
+let particles = [];
+let firesExtinguished = 0;
+
+/* ------------- input ------------- */
+const taps = [];
+function getXY(e){
+  const r = cv.getBoundingClientRect();
+  const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+  const x = (t.clientX - r.left) * (W / r.width);
+  const y = (t.clientY - r.top)  * (H / r.height);
+  return {x, y};
+}
+function tap(e){
+  e.preventDefault();
+  if(audioCtx && audioCtx.state==='suspended') audioCtx.resume();
+  const p = getXY(e);
+  taps.push(p);
+}
+cv.addEventListener('touchstart', tap, {passive:false});
+cv.addEventListener('mousedown',  tap);
+
+/* ------------- pixel sprite definitions ------------- */
+/* fireman 16x20 */
+const FIREMAN = [
+  '....HHHHHHHH....',
+  '...HBBBBBBBBH...',
+  '...HHHHHHHHHH...',
+  '....AFFFFFFA....',
+  '....FFFFFFFF....',
+  '....FEFFFFEF....',  // eyes
+  '....FFFMMFFF....',  // mouth
+  '....AFFFFFFA....',
+  '...CCCCCCCCCC...',
+  '..CCCCCYYCCCCC..',  // belt buckle
+  '..CCCCCYYCCCCC..',
+  '..CCDCCYYCCDCC..',
+  '..CCCCCCCCCCCC..',
+  '...CC.CCCC.CC...',
+  '...CC.CCCC.CC...',
+  '...CC.CCCC.CC...',
+  '...BB.....BB....',
+  '...BB.....BB....',
+  '..BBBB...BBBB...',
+  '..BBBB...BBBB...'
+];
+
+/* fire sprite 16x16 (animated by frame) */
+const FIRE_FRAMES = [
+[
+  '......YY........',
+  '.....YOO........',
+  '....YOOO.YY.....',
+  '...YOOOOROO.....',
+  '..YOOORROOO.....',
+  '..YOORRROOOY....',
+  '.YOORRRRROOY....',
+  '.YORRRRRRROY....',
+  'YORRRRRWWROOY...',
+  'YORRRRWWWROOY...',
+  'YOORRRWWRROOY...',
+  '.YOORRRRROOY....',
+  '.YYOOORROOOY....',
+  '..YYOOOOOOY.....',
+  '...YYOOOOY......',
+  '....YYYYY.......'
+],
+[
+  '.......YY.......',
+  '......YOO.......',
+  '....YYYOOOY.....',
+  '...YOOOOROOY....',
+  '..YOORROOROY....',
+  '..YORRRRROOY....',
+  '.YOORRRRRROY....',
+  '.YORRRWWRRROY...',
+  'YORRWWWWWRROY...',
+  'YORRWWWWWRROY...',
+  'YOORRRWWRROOY...',
+  '.YOORRRRROOY....',
+  '.YYOORROOOY.....',
+  '..YYOOOOOY......',
+  '...YYOOOY.......',
+  '....YYYY........'
+]];
+
+/* truck 32x18 - body shape varies but we'll use one mold and recolor */
+const TRUCK_SPR = [
+  '...........RRRRRRRRRRRRRRRRRRRRR',
+  '...........RWWWWWWWWWWWWWWWWWWWR',
+  '...........RWWWWWWWWWWWWWWWWWWWR',
+  'RRRRRRRRRRRRWWWWWWWWWWWWWWWWWWWR',
+  'RWWWWWWWWRRRRRRRRRRRRRRRRRRRRRRR',
+  'RWGGGGGGWRRRRRRRRRRRRRRRRRRRRRRR',
+  'RWGGGGGGWRDDDDRRRRRRRRRRRRRRDDDD',
+  'RWGGGGGGWRDDDDRRYYYYYYYYYYYYDDDD',
+  'RRRRRRRRRRDDDDRRYYYYYYYYYYYYDDDD',
+  'RRRRRRRRRRDDDDRRYYYYYYYYYYYYDDDD',
+  'RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR',
+  'RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR',
+  '..KKK..........KKK........KKK...',
+  '.KKKKK........KKKKK......KKKKK..',
+  '.KKKKK........KKKKK......KKKKK..',
+  '.KKKKK........KKKKK......KKKKK..',
+  '..KKK..........KKK........KKK...',
+  '................................'
+];
+
+/* hat 16x6 */
+const HAT_SPR = [
+  '....HHHHHHHH....',
+  '...HHHHHHHHHH...',
+  '..HHHHHHHHHHHH..',
+  '..HHHHHHHHHHHH..',
+  '.HHHHHHHHHHHHHH.',
+  '................'
+];
+
+/* pet sprites - small 8x8 */
+const PETS = {
+  dog:[
+    '..BB.BBB',
+    '.BBBBBBB',
+    'BBWWWBBB',
+    'BBWBWBBB',
+    'BBBBBBBB',
+    '.BBBBBB.',
+    '.B.B.B..',
+    '.B.B.B..'
+  ],
+  cat:[
+    'O...O...',
+    'OO.OO...',
+    'OOOOO...',
+    'OWBWBO..',
+    'OOOOOO..',
+    '.OOOO...',
+    '.O.O.O..',
+    '.O.O.O..'
+  ],
+  bird:[
+    '...YY...',
+    '..YYYY..',
+    '.YYRYYY.',
+    'YYYYYYYY',
+    '.YYYYY..',
+    '..YYY...',
+    '..O.O...',
+    '........'
+  ]
+};
+
+/* ------------- compose a fireman with current selections ------------- */
+function drawFireman(x, y, s, opt){
+  const hairC    = HAIR[opt.hair].c;
+  const costume  = COSTUME[opt.costume];
+  const hatColor = HAT[opt.hat].c;
+  const skin = '#f4c8a0';
+
+  // body
+  const key = {
+    'H': hairC,
+    'B': '#3a2a1a',
+    'A': skin,
+    'F': skin,
+    'E': '#1a1a1a',          // eyes
+    'M': '#a02020',          // mouth
+    'C': costume.c,
+    'D': costume.cd,
+    'Y': '#f5b400'
+  };
+  // change face by emotion
+  const f = FACE[opt.face].id;
+  const grid = FIREMAN.map(r=>r.split(''));
+  // eyes row 5; mouth row 6
+  if(f==='happy'){ /* default ^_^ ish */ }
+  if(f==='wink'){ grid[5][4]='F'; grid[5][5]='F'; grid[5][6]='-'; }
+  if(f==='cool'){ grid[5]='....FBBBBBBBF...'.split(''); }
+  if(f==='silly'){ grid[6]='....FFOOOOFF....'.split(''); }
+  key['-']='#1a1a1a'; key['O']='#ff66aa';
+
+  drawSprite(grid.map(r=>r.join('')), x, y, s, key);
+
+  // hat on top
+  const hatKey = {'H': hatColor};
+  drawSprite(HAT_SPR, x, y - 4*s, s, hatKey);
+  // hat badge
+  ctx.fillStyle = '#f5b400';
+  ctx.fillRect(x + 7*s, y - 2*s, 2*s, 2*s);
+}
+
+/* ------------- compose truck ------------- */
+function drawTruck(x, y, s, opt){
+  const t = TRUCK[opt.truck];
+  const key = {
+    'R': t.c,
+    'W': '#ffffff',
+    'G': '#a8e0ff',
+    'D': t.cd,
+    'Y': '#f5b400',
+    'K': '#1a1a1a'
+  };
+  drawSprite(TRUCK_SPR, x, y, s, key);
+  // ladder on top
+  ctx.fillStyle = '#888';
+  for(let i=0;i<6;i++) ctx.fillRect(x+(14+i*2)*s, y-2*s, 1*s, 2*s);
+  ctx.fillStyle = '#666';
+  ctx.fillRect(x+12*s, y-2*s, 1*s, 2*s);
+  ctx.fillRect(x+25*s, y-2*s, 1*s, 2*s);
+  // siren
+  ctx.fillStyle = '#3aa552';
+  ctx.fillRect(x+16*s, y-4*s, 4*s, 2*s);
+}
+
+/* ------------- pet ------------- */
+function drawPet(x, y, s, opt){
+  const p = PET[opt.pet].id;
+  if(p==='none') return;
+  const grid = PETS[p];
+  let key;
+  if(p==='dog')  key = {B:'#8b5a2b', W:'#ffffff'};
+  if(p==='cat')  key = {O:'#ff8a00', W:'#ffffff', B:'#1a1a1a'};
+  if(p==='bird') key = {Y:'#f5b400', R:'#d62828', O:'#1a1a1a'};
+  drawSprite(grid, x, y, s, key);
+}
+
+/* ------------- fire ------------- */
+let fireFrame = 0; let fireFrameTimer = 0;
+function drawFire(x, y, s){
+  drawSprite(FIRE_FRAMES[fireFrame], x, y, s, {
+    Y:'#f5b400', O:'#ff8a00', R:'#d62828', W:'#ffffff'
+  });
+}
+
+/* ------------- scene background ------------- */
+function drawScene(){
+  const sc = SCENES[sel.scene];
+  // sky
+  rect(0,0,W,H*0.65, sc.sky);
+  // sun/cloud decoration
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(120,100,40,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(160,110,30,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(200,100,35,0,Math.PI*2); ctx.fill();
+  // sun
+  ctx.fillStyle = '#fff5a0';
+  ctx.beginPath(); ctx.arc(W-130, 110, 50, 0, Math.PI*2); ctx.fill();
+  // ground
+  rect(0, H*0.65, W, H*0.35, sc.ground);
+  rect(0, H*0.65, W, 8, sc.accent);
+
+  // scene-specific decor
+  if(sel.scene===0){ // town - houses
+    drawHouse(220, 320, '#d6a07e', '#7a1414');
+    drawHouse(560, 300, '#a8d6a0', '#1c4f9e');
+    drawHouse(760, 330, '#f5d98a', '#7a1414');
+  } else if(sel.scene===1){ // forest - trees
+    for(let i=0;i<6;i++) drawTree(150 + i*130, 350 + (i%2)*20);
+  } else if(sel.scene===2){ // city - skyscrapers
+    drawBuilding(180, 200, 120, 280, '#6a6a8a');
+    drawBuilding(330, 150, 140, 330, '#8a6a8a');
+    drawBuilding(500, 220, 110, 260, '#6a8a8a');
+    drawBuilding(640, 170, 130, 310, '#7a7a9a');
+    drawBuilding(800, 230, 100, 250, '#5a6a7a');
+  } else { // beach
+    rect(0, H*0.62, W, 10, '#3aa5d6'); // wave line
+    for(let i=0;i<8;i++){
+      ctx.fillStyle='#fff';
+      ctx.fillRect(80 + i*120, H*0.62 + 3, 40, 2);
+    }
+    drawPalm(180, 320); drawPalm(720, 340);
+  }
+}
+function drawHouse(x, y, body, roof){
+  rect(x, y, 140, 130, body);
+  // roof
+  ctx.fillStyle = roof;
+  ctx.beginPath();
+  ctx.moveTo(x-10, y); ctx.lineTo(x+70, y-50); ctx.lineTo(x+150, y);
+  ctx.closePath(); ctx.fill();
+  // door
+  rect(x+55, y+70, 30, 60, '#5a3a1a');
+  rect(x+78, y+100, 4, 4, '#f5b400');
+  // window
+  rect(x+15, y+20, 30, 30, '#a8e0ff');
+  rect(x+95, y+20, 30, 30, '#a8e0ff');
+  // frames
+  ctx.strokeStyle='#3a2a1a'; ctx.lineWidth=2;
+  ctx.strokeRect(x+15,y+20,30,30); ctx.strokeRect(x+95,y+20,30,30);
+}
+function drawTree(x, y){
+  rect(x, y, 20, 60, '#5a3a1a');
+  ctx.fillStyle = '#2a5e2a';
+  ctx.beginPath(); ctx.arc(x+10, y-10, 40, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3aa552';
+  ctx.beginPath(); ctx.arc(x+10, y-20, 30, 0, Math.PI*2); ctx.fill();
+}
+function drawBuilding(x, y, w, h, c){
+  rect(x, y, w, h, c);
+  // windows
+  for(let r=0; r<Math.floor(h/30); r++){
+    for(let cc=0; cc<Math.floor(w/25); cc++){
+      const lit = ((r+cc)%3)===0;
+      rect(x+10+cc*25, y+10+r*30, 14, 18, lit?'#f5d98a':'#3a3a4a');
+    }
+  }
+}
+function drawPalm(x, y){
+  rect(x, y-80, 14, 100, '#7a4a1a');
+  ctx.fillStyle = '#3aa552';
+  for(let i=0;i<5;i++){
+    ctx.save();
+    ctx.translate(x+7, y-80);
+    ctx.rotate((i-2)*0.5);
+    ctx.fillRect(-5, -50, 60, 12);
+    ctx.restore();
+  }
+}
+
+/* ------------- particles for splash effect ------------- */
+function spawnSplash(x, y){
+  for(let i=0;i<12;i++){
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*6,
+      vy: -Math.random()*6 - 2,
+      life: 1.0,
+      c: Math.random()<0.5 ? '#5ad6f0' : '#a8e0ff'
+    });
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1; i>=0; i--){
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.3;
+    p.life -= dt*1.5;
+    if(p.life<=0) particles.splice(i,1);
+  }
+}
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha = Math.max(0, p.life);
+    rect(p.x, p.y, 6, 6, p.c);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ------------- UI helpers ------------- */
+function button(x, y, w, h, label, color='#d62828', textColor='#fff'){
+  // shadow
+  rect(x+4, y+4, w, h, 'rgba(0,0,0,0.3)');
+  rect(x, y, w, h, color);
+  rect(x, y, w, 6, 'rgba(255,255,255,0.3)');
+  rect(x, y+h-6, w, 6, 'rgba(0,0,0,0.2)');
+  ctx.fillStyle = textColor;
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(label, x+w/2, y+h/2);
+  return {x,y,w,h};
+}
+function hit(b, p){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
+
+function pixelTitle(text, x, y, size=8, color='#d62828', stroke='#fff'){
+  ctx.font = `bold ${size*8}px Courier New`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.lineWidth = size;
+  ctx.strokeStyle = stroke;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+/* ------------- MENU SCREEN ------------- */
+let menuBtn;
+function drawMenu(){
+  // fancy retro background
+  rect(0,0,W,H,'#1a1a3a');
+  // stars
+  for(let i=0;i<60;i++){
+    const sx = (i*97 + Math.floor(performance.now()/50))%W;
+    const sy = (i*53)%H;
+    rect(sx, sy, 2, 2, '#fff');
+  }
+  // title
+  pixelTitle('FIRE HERO', W/2, 180, 8, '#f5b400', '#d62828');
+  pixelTitle('SQUAD', W/2, 280, 8, '#f5b400', '#d62828');
+  // sample truck
+  drawTruck(W/2 - 32*5, 380, 5, {truck:0});
+  // sample fireman
+  drawFireman(W/2 - 16*4 + 200, 400, 4, {hair:0,face:0,costume:0,hat:0,pet:0});
+  // start button
+  menuBtn = button(W/2-180, 580, 360, 90, 'TAP TO START', '#d62828');
+  // hint
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px Courier New';
+  ctx.textAlign='center';
+  ctx.fillText('Ages 4-5  •  Tap fires to put them out!', W/2, 690);
+}
+
+/* ------------- SELECT SCREEN ------------- */
+const SLOTS = [
+  {key:'hair',    label:'HAIR',    arr:HAIR},
+  {key:'face',    label:'FACE',    arr:FACE},
+  {key:'costume', label:'SUIT',    arr:COSTUME},
+  {key:'hat',     label:'HAT',     arr:HAT},
+  {key:'pet',     label:'PET',     arr:PET},
+  {key:'truck',   label:'TRUCK',   arr:TRUCK},
+  {key:'scene',   label:'SCENE',   arr:SCENES}
+];
+let selectButtons = [];
+let playBtn;
+
+function drawSelect(){
+  rect(0,0,W,H,'#ffe6c8');
+  // stripes top
+  for(let i=0;i<W;i+=40){
+    rect(i, 0, 20, 30, '#d62828');
+  }
+  pixelTitle('PICK YOUR HERO!', W/2, 70, 5, '#d62828', '#fff');
+
+  // big preview on left
+  rect(40, 130, 360, 480, '#fff');
+  rect(40, 130, 360, 480, 'rgba(0,0,0,0)');
+  ctx.strokeStyle='#d62828'; ctx.lineWidth=6;
+  ctx.strokeRect(40, 130, 360, 480);
+
+  // truck preview
+  drawTruck(60, 480, 4, sel);
+  // fireman preview big
+  drawFireman(180, 200, 8, sel);
+  // pet preview
+  if(PET[sel.pet].id !== 'none'){
+    drawPet(80, 420, 6, sel);
+  }
+  // scene name
+  ctx.fillStyle='#1a1a1a'; ctx.font='bold 24px Courier New'; ctx.textAlign='center';
+  ctx.fillText('Scene: ' + SCENES[sel.scene].name, 220, 160);
+
+  // option rows on right
+  selectButtons = [];
+  const startX = 440, startY = 140;
+  const rowH = 70;
+  SLOTS.forEach((slot, i) => {
+    const y = startY + i*rowH;
+    // label
+    ctx.fillStyle='#1a1a1a'; ctx.font='bold 22px Courier New'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(slot.label, startX, y+25);
+    // < button
+    const left = button(startX+90, y, 50, 50, '<', '#2a6fd6');
+    // current value box
+    const boxX = startX+150, boxW = 280;
+    rect(boxX, y, boxW, 50, '#fff');
+    ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=3; ctx.strokeRect(boxX,y,boxW,50);
+    // draw swatch / label
+    const cur = slot.arr[sel[slot.key]];
+    ctx.fillStyle='#1a1a1a'; ctx.font='bold 22px Courier New'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    if(slot.key==='hair' || slot.key==='hat'){
+      rect(boxX+10, y+10, 30, 30, cur.c);
+      ctx.fillText(cur.id.toUpperCase(), boxX+boxW/2+15, y+25);
+    } else if(slot.key==='costume' || slot.key==='truck'){
+      rect(boxX+10, y+10, 30, 30, cur.c);
+      ctx.fillText(cur.id.toUpperCase(), boxX+boxW/2+15, y+25);
+    } else if(slot.key==='face'){
+      ctx.fillText(cur.id.toUpperCase(), boxX+boxW/2, y+25);
+    } else if(slot.key==='pet'){
+      ctx.fillText(cur.label + '  ' + cur.id.toUpperCase(), boxX+boxW/2, y+25);
+    } else if(slot.key==='scene'){
+      ctx.fillText(cur.name, boxX+boxW/2, y+25);
+    }
+    // > button
+    const right = button(startX+440, y, 50, 50, '>', '#2a6fd6');
+    selectButtons.push({left, right, slot});
+  });
+
+  // PLAY button
+  playBtn = button(W/2-150, H-100, 300, 80, 'PLAY!', '#3aa552');
+}
+
+/* ------------- PLAY SCREEN ------------- */
+function spawnFire(){
+  // spawn within ground+lower-sky area
+  const x = 100 + Math.random()*(W-200);
+  const y = 250 + Math.random()*(H-400);
+  fires.push({x, y, life: 5 + Math.random()*4, scale: 4 + Math.floor(Math.random()*2)});
+  SFX.siren();
+}
+let spawnTimer = 0;
+
+function startPlay(){
+  fires = []; particles = [];
+  score = 0; firesExtinguished = 0;
+  timeLeft = 30;
+  spawnTimer = 0;
+  scene = 'play';
+  // initial fires
+  for(let i=0;i<3;i++) spawnFire();
+}
+
+function updatePlay(dt){
+  timeLeft -= dt;
+  spawnTimer -= dt;
+  if(spawnTimer<=0 && fires.length<6){
+    spawnFire();
+    spawnTimer = 1.2 + Math.random()*1.5;
+  }
+  // shrink fire life slightly (they don't auto-extinguish, just for visual)
+  // handle taps
+  while(taps.length){
+    const p = taps.shift();
+    let hitFire = -1;
+    for(let i=fires.length-1; i>=0; i--){
+      const f = fires[i];
+      const sz = 16*f.scale;
+      if(p.x>=f.x && p.x<=f.x+sz && p.y>=f.y && p.y<=f.y+sz){
+        hitFire = i; break;
+      }
+    }
+    if(hitFire>=0){
+      const f = fires[hitFire];
+      spawnSplash(f.x + 8*f.scale, f.y + 8*f.scale);
+      fires.splice(hitFire,1);
+      score += 10;
+      firesExtinguished++;
+      SFX.splash();
+    } else {
+      SFX.click();
+    }
+  }
+  updateParticles(dt);
+  if(timeLeft<=0){
+    scene = 'done';
+    SFX.cheer();
+  }
+}
+
+function drawPlay(){
+  drawScene();
+  // truck on the ground
+  drawTruck(60, H-160, 3, sel);
+  // fireman next to truck
+  drawFireman(220, H-200, 4, sel);
+  // pet next to fireman
+  if(PET[sel.pet].id !== 'none') drawPet(170, H-130, 4, sel);
+
+  // fires
+  for(const f of fires){
+    drawFire(f.x, f.y, f.scale);
+    // little smoke puff above
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle='#888';
+    ctx.beginPath(); ctx.arc(f.x+8*f.scale, f.y-10, 16, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  drawParticles();
+
+  // HUD
+  rect(0,0,W,60,'rgba(0,0,0,0.5)');
+  ctx.fillStyle='#fff';
+  ctx.font='bold 32px Courier New';
+  ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('SCORE: ' + score, 20, 30);
+  ctx.textAlign='center';
+  ctx.fillText('FIRES: ' + firesExtinguished, W/2, 30);
+  ctx.textAlign='right';
+  const t = Math.max(0, Math.ceil(timeLeft));
+  ctx.fillStyle = t<=5 ? '#ff6666' : '#fff';
+  ctx.fillText('TIME: ' + t, W-20, 30);
+}
+
+/* ------------- DONE SCREEN ------------- */
+let doneBtn1, doneBtn2;
+function drawDone(){
+  drawScene();
+  rect(0,0,W,H,'rgba(0,0,0,0.55)');
+
+  pixelTitle('GOOD JOB!', W/2, 180, 8, '#f5b400', '#d62828');
+
+  // big star
+  ctx.fillStyle = '#f5b400';
+  ctx.strokeStyle='#d62828'; ctx.lineWidth=6;
+  ctx.beginPath();
+  const cx = W/2, cy = 360, r1=80, r2=35;
+  for(let i=0;i<10;i++){
+    const a = -Math.PI/2 + i*Math.PI/5;
+    const r = i%2===0 ? r1 : r2;
+    const x = cx + Math.cos(a)*r, y = cy + Math.sin(a)*r;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  // score line
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px Courier New';
+  ctx.textAlign='center';
+  ctx.fillText('SCORE: ' + score, W/2, 490);
+  ctx.font = 'bold 28px Courier New';
+  ctx.fillText('Fires put out: ' + firesExtinguished, W/2, 540);
+
+  doneBtn1 = button(W/2-330, 600, 300, 80, 'PLAY AGAIN', '#3aa552');
+  doneBtn2 = button(W/2+30,  600, 300, 80, 'CHANGE HERO', '#2a6fd6');
+}
+
+/* ------------- main loop ------------- */
+function loop(now){
+  const dt = Math.min(0.05, (now - lastTime)/1000);
+  lastTime = now;
+
+  // animate fire frames
+  fireFrameTimer += dt;
+  if(fireFrameTimer > 0.15){ fireFrame = (fireFrame+1)%FIRE_FRAMES.length; fireFrameTimer = 0; }
+
+  // route taps for menu/select/done
+  if(scene==='menu'){
+    drawMenu();
+    while(taps.length){
+      const p = taps.shift();
+      if(hit(menuBtn,p)){ scene='select'; SFX.click(); }
+    }
+  } else if(scene==='select'){
+    drawSelect();
+    while(taps.length){
+      const p = taps.shift();
+      if(hit(playBtn,p)){ SFX.click(); startPlay(); break; }
+      for(const sb of selectButtons){
+        if(hit(sb.left,p)){
+          const k = sb.slot.key, len = sb.slot.arr.length;
+          sel[k] = (sel[k] - 1 + len) % len; SFX.click(); break;
+        }
+        if(hit(sb.right,p)){
+          const k = sb.slot.key, len = sb.slot.arr.length;
+          sel[k] = (sel[k] + 1) % len; SFX.click(); break;
+        }
+      }
+    }
+  } else if(scene==='play'){
+    updatePlay(dt);
+    drawPlay();
+  } else if(scene==='done'){
+    drawDone();
+    while(taps.length){
+      const p = taps.shift();
+      if(hit(doneBtn1,p)){ SFX.click(); startPlay(); break; }
+      if(hit(doneBtn2,p)){ SFX.click(); scene='select'; break; }
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

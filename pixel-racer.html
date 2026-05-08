@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Pixel Racer — 2P</title>
+<style>
+/* Pixel Racer — retro CRT vibe */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body {
+  height: 100%;
+  background: #0b0d12;
+  color: #e8eaf0;
+  font-family: "Courier New", monospace;
+  overflow: hidden;
+  touch-action: none;
+}
+#game-root {
+  position: relative;
+  width: 100vw; height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(ellipse at center, #1a1d28 0%, #05060a 100%);
+}
+#game {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  width: min(100vw, 177.78vh);   /* keep 5:3 aspect */
+  height: min(56.25vw, 100vh);
+  max-width: 100%; max-height: 100%;
+  background: #2a2f3a;
+  box-shadow: 0 0 30px rgba(80,180,255,.15), inset 0 0 60px rgba(0,0,0,.6);
+  border: 2px solid #3a4050;
+}
+#hint {
+  position: absolute;
+  bottom: 8px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: #9aa3b8; letter-spacing: 1px;
+  text-align: center; padding: 4px 10px;
+  background: rgba(0,0,0,.4); border-radius: 4px;
+  pointer-events: none;
+}
+/* Touch controls */
+#touch-controls {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  display: flex; justify-content: space-between;
+  padding: 20px;
+}
+#touch-controls.hidden { display: none; }
+.pad {
+  display: flex; gap: 12px;
+  align-self: flex-end;
+  pointer-events: auto;
+}
+.btn {
+  width: 64px; height: 64px;
+  font-size: 22px; font-weight: bold;
+  font-family: inherit;
+  border: 2px solid #5a6480;
+  background: rgba(40,48,72,.85);
+  color: #e8eaf0;
+  border-radius: 12px;
+  user-select: none;
+  touch-action: none;
+}
+.btn:active, .btn.pressed {
+  background: #ffcc33; color: #1a1d28; border-color: #ffcc33;
+}
+/* Auto-show touch on coarse pointer (iPad / phones) */
+@media (pointer: coarse) {
+  #touch-controls.hidden { display: flex; }
+  #hint { display: none; }
+}
+
+</style>
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game" width="800" height="480"></canvas>
+    <div id="touch-controls" class="hidden">
+      <div class="pad pad-left">
+        <button class="btn" data-key="p1-left">◀</button>
+        <button class="btn" data-key="p1-gas">GAS</button>
+        <button class="btn" data-key="p1-right">▶</button>
+      </div>
+      <div class="pad pad-right">
+        <button class="btn" data-key="p2-left">◀</button>
+        <button class="btn" data-key="p2-gas">GAS</button>
+        <button class="btn" data-key="p2-right">▶</button>
+      </div>
+    </div>
+    <div id="hint">
+      <strong>P1</strong>: A / D steer · W gas &nbsp;|&nbsp; <strong>P2</strong>: ← / → steer · ↑ gas &nbsp;|&nbsp; Space: confirm · R: restart
+    </div>
+  </div>
+<script>
+// input.js — unified keyboard + touch input
+(function (global) {
+  const state = {
+    'p1-left': false, 'p1-right': false, 'p1-gas': false,
+    'p2-left': false, 'p2-right': false, 'p2-gas': false,
+    'confirm': false, 'restart': false,
+  };
+  // Edge-trigger flags consumed once
+  const pressed = { confirm: false, restart: false };
+
+  const keyMap = {
+    'KeyA': 'p1-left', 'KeyD': 'p1-right', 'KeyW': 'p1-gas',
+    'ArrowLeft': 'p2-left', 'ArrowRight': 'p2-right', 'ArrowUp': 'p2-gas',
+    'Space': 'confirm', 'KeyR': 'restart',
+  };
+
+  window.addEventListener('keydown', (e) => {
+    const k = keyMap[e.code];
+    if (k) {
+      if (!state[k] && (k === 'confirm' || k === 'restart')) pressed[k] = true;
+      state[k] = true;
+      e.preventDefault();
+    }
+  }, { passive: false });
+  window.addEventListener('keyup', (e) => {
+    const k = keyMap[e.code];
+    if (k) { state[k] = false; e.preventDefault(); }
+  }, { passive: false });
+
+  // Touch buttons
+  function bindTouch() {
+    document.querySelectorAll('.btn').forEach((b) => {
+      const k = b.dataset.key;
+      const on = (ev) => { ev.preventDefault(); state[k] = true; b.classList.add('pressed'); };
+      const off = (ev) => { ev.preventDefault(); state[k] = false; b.classList.remove('pressed'); };
+      b.addEventListener('touchstart', on, { passive: false });
+      b.addEventListener('touchend', off, { passive: false });
+      b.addEventListener('touchcancel', off, { passive: false });
+      b.addEventListener('mousedown', on);
+      b.addEventListener('mouseup', off);
+      b.addEventListener('mouseleave', off);
+    });
+    // Double-tap on canvas → confirm (handy for char select on iPad)
+    const canvas = document.getElementById('game');
+    canvas.addEventListener('touchstart', (e) => {
+      pressed.confirm = true;
+    }, { passive: true });
+  }
+  document.addEventListener('DOMContentLoaded', bindTouch);
+
+  global.Input = {
+    isDown: (k) => !!state[k],
+    consumePressed: (k) => {
+      if (pressed[k]) { pressed[k] = false; return true; }
+      return false;
+    },
+  };
+})(window);
+
+// sprites.js — procedurally drawn pixel-art car sprites (no external assets needed)
+// Each car is a 16x24 pixel grid pre-rendered into 8 rotation frames.
+(function (global) {
+  const W = 16, H = 24;
+  // 0 = transparent, otherwise palette index
+  // Palette per car: [body, bodyDark, window, accent, wheel, outline]
+  const PALETTES = {
+    red:    ['#e53935', '#a52826', '#7ad7ff', '#fff176', '#1a1a1a', '#000'],
+    blue:   ['#1e88e5', '#1156a3', '#bde0ff', '#ffd54f', '#1a1a1a', '#000'],
+    green:  ['#43a047', '#2a6b2c', '#bff0c5', '#ffd54f', '#1a1a1a', '#000'],
+    yellow: ['#fdd835', '#b48a14', '#fff7b0', '#e53935', '#1a1a1a', '#000'],
+  };
+
+  // Top-down car template, facing UP. 1=outline,2=body,3=bodyDark,4=window,5=accent,6=wheel
+  // 16 cols x 24 rows
+  const TEMPLATE = [
+    "0000011111100000",
+    "0001122222211000",
+    "0012222222222100",
+    "0122244444422210",
+    "0122244444422210",
+    "0122244444422210",
+    "0122222222222210",
+    "0612222222222160",
+    "0612233333322160",
+    "0612233333322160",
+    "0612233333322160",
+    "0122233333322210",
+    "0122233333322210",
+    "0122222222222210",
+    "0612222222222160",
+    "0612222222222160",
+    "0122255222255210",
+    "0122255222255210",
+    "0122222222222210",
+    "0122222222222210",
+    "0612222222222160",
+    "0612222222222160",
+    "0011222222221100",
+    "0001111111110000",
+  ];
+
+  function buildBaseFrame(color) {
+    const pal = PALETTES[color];
+    const cvs = document.createElement('canvas');
+    cvs.width = W; cvs.height = H;
+    const ctx = cvs.getContext('2d');
+    const img = ctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const ch = TEMPLATE[y].charCodeAt(x) - 48; // '0'-'6'
+        const idx = (y * W + x) * 4;
+        if (ch === 0) {
+          img.data[idx + 3] = 0;
+        } else {
+          let hex;
+          switch (ch) {
+            case 1: hex = pal[5]; break; // outline
+            case 2: hex = pal[0]; break; // body
+            case 3: hex = pal[1]; break; // body dark
+            case 4: hex = pal[2]; break; // window
+            case 5: hex = pal[3]; break; // accent
+            case 6: hex = pal[4]; break; // wheel
+          }
+          const r = parseInt(hex.slice(1, 3), 16);
+          const g = parseInt(hex.slice(3, 5), 16);
+          const b = parseInt(hex.slice(5, 7), 16);
+          img.data[idx]     = r;
+          img.data[idx + 1] = g;
+          img.data[idx + 2] = b;
+          img.data[idx + 3] = 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return cvs;
+  }
+
+  // Rotate a base canvas by `angle` rad into a new canvas of size S
+  function rotateInto(base, angle, S) {
+    const out = document.createElement('canvas');
+    out.width = S; out.height = S;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(S / 2, S / 2);
+    ctx.rotate(angle);
+    ctx.drawImage(base, -base.width / 2, -base.height / 2);
+    return out;
+  }
+
+  // Build 32 rotation frames per car for smooth top-down rotation
+  const FRAMES_COUNT = 32;
+  const SPRITE_SIZE = 32; // square padded
+  const cars = {};
+  function build() {
+    Object.keys(PALETTES).forEach((color) => {
+      const base = buildBaseFrame(color);
+      const frames = [];
+      for (let i = 0; i < FRAMES_COUNT; i++) {
+        const a = (i / FRAMES_COUNT) * Math.PI * 2;
+        frames.push(rotateInto(base, a, SPRITE_SIZE));
+      }
+      cars[color] = { base, frames };
+    });
+  }
+
+  global.Sprites = {
+    init: build,
+    getCar: (color) => cars[color],
+    FRAMES_COUNT,
+    SPRITE_SIZE,
+    colors: Object.keys(PALETTES),
+  };
+})(window);
+
+// track.js — defines the race course as a closed-loop centerline + width
+(function (global) {
+  // Course is an oval-ish loop with a chicane in the middle.
+  const RAW_POINTS = [
+    [120, 100], [300, 70], [520, 90], [680, 140],
+    [720, 260], [620, 340], [500, 300], [380, 360],
+    [260, 400], [120, 360], [70, 240],
+  ];
+  const TRACK_W = 70;
+  const FINISH_INDEX = 0;
+
+  // Catmull-Rom -> dense polyline (closed loop)
+  function densify(points, samples = 24) {
+    const out = [];
+    const n = points.length;
+    for (let i = 0; i < n; i++) {
+      const p0 = points[(i - 1 + n) % n];
+      const p1 = points[i];
+      const p2 = points[(i + 1) % n];
+      const p3 = points[(i + 2) % n];
+      for (let s = 0; s < samples; s++) {
+        const t = s / samples;
+        const t2 = t * t, t3 = t2 * t;
+        const x = 0.5 * ((2*p1[0]) + (-p0[0]+p2[0])*t + (2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2 + (-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3);
+        const y = 0.5 * ((2*p1[1]) + (-p0[1]+p2[1])*t + (2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2 + (-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3);
+        out.push([x, y]);
+      }
+    }
+    return out;
+  }
+
+  const center = densify(RAW_POINTS, 24);
+
+  function nearestIndex(x, y) {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < center.length; i++) {
+      const dx = x - center[i][0], dy = y - center[i][1];
+      const d = dx*dx + dy*dy;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return { index: best, dist: Math.sqrt(bd) };
+  }
+
+  function isOnTrack(x, y) {
+    return nearestIndex(x, y).dist <= TRACK_W;
+  }
+
+  function tangentAt(i) {
+    const a = center[(i - 1 + center.length) % center.length];
+    const b = center[(i + 1) % center.length];
+    return Math.atan2(b[1] - a[1], b[0] - a[0]);
+  }
+
+  function startPositions() {
+    const i = FINISH_INDEX;
+    const ang = tangentAt(i);
+    const nx = Math.cos(ang + Math.PI / 2);
+    const ny = Math.sin(ang + Math.PI / 2);
+    const cx = center[i][0], cy = center[i][1];
+    return [
+      { x: cx + nx * 18, y: cy + ny * 18, angle: ang },
+      { x: cx - nx * 18, y: cy - ny * 18, angle: ang },
+    ];
+  }
+
+  function drawPath(ctx) {
+    ctx.beginPath();
+    for (let i = 0; i < center.length; i++) {
+      const [x, y] = center[i];
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function drawFinish(ctx) {
+    const i = FINISH_INDEX;
+    const ang = tangentAt(i);
+    const cx = center[i][0], cy = center[i][1];
+    const len = TRACK_W;
+    const cell = 6;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    for (let k = -len; k < len; k += cell) {
+      for (let row = 0; row < 2; row++) {
+        const isWhite = ((Math.floor(k / cell) + row) % 2) === 0;
+        ctx.fillStyle = isWhite ? '#ffffff' : '#111';
+        ctx.fillRect(-cell + row * cell, k, cell, cell);
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawTrack(ctx) {
+    // Grass background
+    ctx.fillStyle = '#3a6b3a';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+    // Pixel grass speckle
+    ctx.fillStyle = '#2f5a30';
+    for (let y = 0; y < ctx.canvas.height; y += 8) {
+      for (let x = (y % 16); x < ctx.canvas.width; x += 16) {
+        ctx.fillRect(x, y, 2, 2);
+      }
+    }
+
+    // Dark road outline (curb)
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#1e1e22';
+    ctx.lineWidth = TRACK_W * 2 + 6;
+    drawPath(ctx);
+    ctx.stroke();
+
+    // Road surface
+    ctx.strokeStyle = '#4a4a55';
+    ctx.lineWidth = TRACK_W * 2;
+    drawPath(ctx);
+    ctx.stroke();
+
+    // Center dashed line
+    ctx.setLineDash([10, 12]);
+    ctx.strokeStyle = '#f4d35e';
+    ctx.lineWidth = 2;
+    drawPath(ctx);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    drawFinish(ctx);
+  }
+
+  global.Track = {
+    center,
+    halfWidth: TRACK_W,
+    finishIndex: FINISH_INDEX,
+    startPositions,
+    nearestIndex,
+    isOnTrack,
+    tangentAt,
+    draw: drawTrack,
+  };
+})(window);
+
+// game.js — core game loop, states, physics
+(function (global) {
+  const STATES = { SELECT: 'select', COUNTDOWN: 'countdown', RACING: 'racing', FINISHED: 'finished' };
+  const TOTAL_LAPS = 2;
+
+  function makeCar(color, x, y, angle) {
+    return {
+      color, x, y, angle,
+      vx: 0, vy: 0,
+      speed: 0,
+      lap: 0,
+      lastIndex: 0,
+      progress: 0,        // total signed progress along centerline (in samples)
+      finished: false,
+      finishedAt: 0,
+      passedHalf: false,  // for valid lap detection
+    };
+  }
+
+  const game = {
+    state: STATES.SELECT,
+    selection: { p1: 0, p2: 1 }, // indices into Sprites.colors
+    selected: { p1: false, p2: false },
+    cars: [],
+    countdown: 3.999,   // counts down to 0 then "GO!"
+    raceTime: 0,
+    winner: null,       // 'P1' | 'P2' | null
+    finishOrder: [],
+    canvas: null,
+    ctx: null,
+    showTouch: false,
+  };
+
+  function init(canvas) {
+    game.canvas = canvas;
+    game.ctx = canvas.getContext('2d');
+    game.ctx.imageSmoothingEnabled = false;
+    game.showTouch = matchMedia('(pointer: coarse)').matches;
+    if (game.showTouch) document.getElementById('touch-controls').classList.remove('hidden');
+  }
+
+  function resetRace() {
+    const colors = Sprites.colors;
+    const positions = Track.startPositions();
+    const c1 = makeCar(colors[game.selection.p1], positions[0].x, positions[0].y, positions[0].angle);
+    const c2 = makeCar(colors[game.selection.p2], positions[1].x, positions[1].y, positions[1].angle);
+    c1.lastIndex = Track.finishIndex;
+    c2.lastIndex = Track.finishIndex;
+    game.cars = [c1, c2];
+    game.countdown = 3.999;
+    game.raceTime = 0;
+    game.winner = null;
+    game.finishOrder = [];
+    game.state = STATES.COUNTDOWN;
+  }
+
+  // ---------- Update ----------
+  function update(dt) {
+    if (game.state === STATES.SELECT) updateSelect(dt);
+    else if (game.state === STATES.COUNTDOWN) updateCountdown(dt);
+    else if (game.state === STATES.RACING) updateRacing(dt);
+    else if (game.state === STATES.FINISHED) updateFinished(dt);
+  }
+
+  // Select state: each player picks a color, both confirm to start
+  // Use the same control bindings: left/right cycle, gas confirms.
+  let selectCooldown = { p1: 0, p2: 0 };
+  function updateSelect(dt) {
+    selectCooldown.p1 = Math.max(0, selectCooldown.p1 - dt);
+    selectCooldown.p2 = Math.max(0, selectCooldown.p2 - dt);
+    const n = Sprites.colors.length;
+
+    function tryCycle(player, dir) {
+      const key = player;
+      if (selectCooldown[key] > 0) return;
+      let other = player === 'p1' ? 'p2' : 'p1';
+      let next = (game.selection[player] + dir + n) % n;
+      if (next === game.selection[other]) next = (next + dir + n) % n;
+      game.selection[player] = next;
+      selectCooldown[key] = 0.18;
+    }
+
+    if (!game.selected.p1) {
+      if (Input.isDown('p1-left'))  tryCycle('p1', -1);
+      if (Input.isDown('p1-right')) tryCycle('p1', +1);
+      if (Input.isDown('p1-gas'))   game.selected.p1 = true;
+    }
+    if (!game.selected.p2) {
+      if (Input.isDown('p2-left'))  tryCycle('p2', -1);
+      if (Input.isDown('p2-right')) tryCycle('p2', +1);
+      if (Input.isDown('p2-gas'))   game.selected.p2 = true;
+    }
+    if (game.selected.p1 && game.selected.p2) {
+      // brief delay before race start
+      resetRace();
+    }
+    if (Input.consumePressed('restart')) {
+      game.selected.p1 = false; game.selected.p2 = false;
+    }
+  }
+
+  function updateCountdown(dt) {
+    game.countdown -= dt;
+    if (game.countdown <= -0.7) {
+      game.state = STATES.RACING;
+    }
+    // Cars stay still during countdown
+    if (Input.consumePressed('restart')) softReset();
+  }
+
+  function updateRacing(dt) {
+    game.raceTime += dt;
+    for (let i = 0; i < game.cars.length; i++) {
+      const car = game.cars[i];
+      if (car.finished) continue;
+      const ctrl = i === 0 ? 'p1' : 'p2';
+      driveCar(car, ctrl, dt);
+      checkLap(car);
+    }
+    // Car-car collision (simple circle)
+    const a = game.cars[0], b = game.cars[1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.hypot(dx, dy);
+    const minD = 18;
+    if (d < minD && d > 0.0001) {
+      const push = (minD - d) / 2;
+      const nx = dx / d, ny = dy / d;
+      a.x -= nx * push; a.y -= ny * push;
+      b.x += nx * push; b.y += ny * push;
+      // bounce some velocity
+      a.speed *= 0.7; b.speed *= 0.7;
+    }
+
+    if (game.cars.every(c => c.finished)) {
+      game.state = STATES.FINISHED;
+      game.winner = game.finishOrder[0];
+    }
+    if (Input.consumePressed('restart')) softReset();
+  }
+
+  function updateFinished(dt) {
+    if (Input.consumePressed('restart') || Input.consumePressed('confirm')) {
+      hardReset();
+    }
+  }
+
+  function softReset() {
+    resetRace();
+  }
+  function hardReset() {
+    game.selected.p1 = false; game.selected.p2 = false;
+    game.state = STATES.SELECT;
+  }
+
+  // Physics: simple top-down arcade
+  function driveCar(car, ctrl, dt) {
+    const TURN = 2.6;          // rad/sec at full speed
+    const ACCEL = 130;         // px/s^2
+    const BRAKE = 220;
+    const MAX_SPEED = 180;
+    const FRICTION = 0.985;
+    const OFFROAD = 0.55;      // speed multiplier off road
+
+    const left = Input.isDown(ctrl + '-left');
+    const right = Input.isDown(ctrl + '-right');
+    const gas = Input.isDown(ctrl + '-gas');
+
+    // Steering scales with speed (no turning when nearly stopped)
+    const speedFactor = Math.min(1, Math.abs(car.speed) / 40);
+    if (left)  car.angle -= TURN * dt * speedFactor;
+    if (right) car.angle += TURN * dt * speedFactor;
+
+    if (gas) car.speed += ACCEL * dt;
+    else car.speed *= FRICTION;
+
+    // No reverse for simplicity; add tiny braking if no gas + moving
+    car.speed = Math.max(0, Math.min(MAX_SPEED, car.speed));
+
+    // Off-road slowdown
+    const onTrack = Track.isOnTrack(car.x, car.y);
+    const factor = onTrack ? 1 : OFFROAD;
+    const effSpeed = car.speed * factor;
+
+    car.x += Math.cos(car.angle) * effSpeed * dt;
+    car.y += Math.sin(car.angle) * effSpeed * dt;
+
+    // Soft world bounds
+    car.x = Math.max(8, Math.min(792, car.x));
+    car.y = Math.max(8, Math.min(472, car.y));
+  }
+
+  function checkLap(car) {
+    const { index } = Track.nearestIndex(car.x, car.y);
+    const total = Track.center.length;
+    const half = Math.floor(total / 2);
+    // mark having gone roughly halfway round before finishing the lap
+    const distFromFinish = (index - Track.finishIndex + total) % total;
+    if (distFromFinish > half - 5 && distFromFinish < half + 5) car.passedHalf = true;
+
+    // Detect crossing finish: previous index just before, new index at/after finish, in forward direction
+    const prev = car.lastIndex;
+    const cur = index;
+    const forwardCrossed = (prev > total - 8) && (cur < 8); // wrap-around forward
+    if (forwardCrossed && car.passedHalf) {
+      car.lap += 1;
+      car.passedHalf = false;
+      if (car.lap >= TOTAL_LAPS) {
+        car.finished = true;
+        car.finishedAt = game.raceTime;
+        const label = (car === game.cars[0]) ? 'P1' : 'P2';
+        if (!game.finishOrder.includes(label)) game.finishOrder.push(label);
+      }
+    }
+    car.lastIndex = cur;
+  }
+
+  // ---------- Render ----------
+  function render() {
+    const { ctx, canvas } = game;
+    ctx.imageSmoothingEnabled = false;
+    if (game.state === STATES.SELECT) renderSelect(ctx, canvas);
+    else renderRace(ctx, canvas);
+  }
+
+  function renderRace(ctx, canvas) {
+    Track.draw(ctx);
+    // Cars
+    for (let i = 0; i < game.cars.length; i++) {
+      drawCar(ctx, game.cars[i]);
+    }
+    // HUD
+    drawHUD(ctx, canvas);
+    if (game.state === STATES.COUNTDOWN) drawCountdown(ctx, canvas);
+    if (game.state === STATES.FINISHED) drawWinner(ctx, canvas);
+  }
+
+  function drawCar(ctx, car) {
+    const sprite = Sprites.getCar(car.color);
+    const N = Sprites.FRAMES_COUNT;
+    // Sprite faces UP (-PI/2). Convert car.angle to frame index.
+    let a = car.angle + Math.PI / 2;
+    let idx = Math.round(((a % (Math.PI * 2)) + Math.PI * 2) / (Math.PI * 2) * N) % N;
+    const frame = sprite.frames[idx];
+    const s = Sprites.SPRITE_SIZE;
+    // Wobble while moving for life
+    const wob = car.speed > 5 ? Math.sin(performance.now() / 60) * 0.6 : 0;
+    ctx.drawImage(frame, Math.round(car.x - s / 2), Math.round(car.y - s / 2 + wob));
+  }
+
+  function drawHUD(ctx, canvas) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(8, 8, 200, 56);
+    ctx.fillRect(canvas.width - 208, 8, 200, 56);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.fillText(`P1  LAP ${Math.min(game.cars[0]?.lap+1 || 1, TOTAL_LAPS)}/${TOTAL_LAPS}`, 16, 28);
+    ctx.fillStyle = colorOf(game.cars[0]?.color);
+    ctx.fillRect(16, 36, 14, 14);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`SPEED ${Math.round(game.cars[0]?.speed||0)}`, 36, 48);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`P2  LAP ${Math.min(game.cars[1]?.lap+1 || 1, TOTAL_LAPS)}/${TOTAL_LAPS}`, canvas.width - 16, 28);
+    ctx.fillStyle = colorOf(game.cars[1]?.color);
+    ctx.fillRect(canvas.width - 30, 36, 14, 14);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`SPEED ${Math.round(game.cars[1]?.speed||0)}`, canvas.width - 36, 48);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.fillStyle = '#ffd54f';
+    ctx.fillText(`TIME ${game.raceTime.toFixed(2)}s`, canvas.width / 2, 24);
+    ctx.restore();
+  }
+
+  function colorOf(name) {
+    return ({ red:'#e53935', blue:'#1e88e5', green:'#43a047', yellow:'#fdd835' })[name] || '#fff';
+  }
+
+  function drawCountdown(ctx, canvas) {
+    const t = game.countdown;
+    let label = null;
+    if (t > 2) label = '3';
+    else if (t > 1) label = '2';
+    else if (t > 0) label = '1';
+    else label = 'GO!';
+    ctx.save();
+    ctx.fillStyle = label === 'GO!' ? '#7fff7a' : '#ffe066';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 6;
+    ctx.font = 'bold 96px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeText(label, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    ctx.restore();
+  }
+
+  function drawWinner(ctx, canvas) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffd54f';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 5;
+    ctx.font = 'bold 56px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const msg = `${game.winner} WINS!`;
+    ctx.strokeText(msg, canvas.width/2, canvas.height/2 - 30);
+    ctx.fillText(msg, canvas.width/2, canvas.height/2 - 30);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px "Courier New", monospace';
+    const t1 = game.cars[0].finishedAt ? `${game.cars[0].finishedAt.toFixed(2)}s` : 'DNF';
+    const t2 = game.cars[1].finishedAt ? `${game.cars[1].finishedAt.toFixed(2)}s` : 'DNF';
+    ctx.fillText(`P1: ${t1}    P2: ${t2}`, canvas.width/2, canvas.height/2 + 20);
+    ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.fillStyle = '#7fff7a';
+    ctx.fillText('Press SPACE / R or tap to play again', canvas.width/2, canvas.height/2 + 60);
+    ctx.restore();
+  }
+
+  function renderSelect(ctx, canvas) {
+    // Background
+    ctx.fillStyle = '#0e1220';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Stars
+    for (let i = 0; i < 60; i++) {
+      const x = (i * 137) % canvas.width;
+      const y = (i * 53) % canvas.height;
+      ctx.fillStyle = (i % 7 === 0) ? '#ffd54f' : '#5a6480';
+      ctx.fillRect(x, y, 2, 2);
+    }
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 40px "Courier New", monospace';
+    ctx.fillText('PIXEL RACER', canvas.width / 2, 60);
+    ctx.font = 'bold 16px "Courier New", monospace';
+    ctx.fillStyle = '#9aa3b8';
+    ctx.fillText('CHOOSE YOUR CAR', canvas.width / 2, 90);
+
+    drawSelectPanel(ctx, 'P1', 200, 250, game.selection.p1, game.selected.p1, 'p1');
+    drawSelectPanel(ctx, 'P2', 600, 250, game.selection.p2, game.selected.p2, 'p2');
+
+    ctx.fillStyle = '#9aa3b8';
+    ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.fillText('P1: A/D to choose · W to confirm    P2: ←/→ to choose · ↑ to confirm', canvas.width/2, canvas.height - 40);
+    if (game.showTouch) {
+      ctx.fillStyle = '#ffd54f';
+      ctx.fillText('Touch: use ◀ ▶ to select, GAS to confirm', canvas.width/2, canvas.height - 22);
+    }
+  }
+
+  function drawSelectPanel(ctx, label, x, y, sel, locked, who) {
+    ctx.save();
+    ctx.translate(x, y);
+    // Panel
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(-110, -90, 220, 180);
+    ctx.strokeStyle = locked ? '#7fff7a' : '#ffd54f';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-110, -90, 220, 180);
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px "Courier New", monospace';
+    ctx.fillText(label, 0, -64);
+
+    // Big car preview
+    const color = Sprites.colors[sel];
+    const sprite = Sprites.getCar(color);
+    if (sprite) {
+      // facing up frame is index 0 (-π/2 + π/2 = 0)
+      const frame = sprite.frames[0];
+      const scale = 3;
+      const sz = Sprites.SPRITE_SIZE * scale;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(frame, -sz/2, -sz/2 + 10, sz, sz);
+    }
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.fillText(color.toUpperCase(), 0, 76);
+
+    if (locked) {
+      ctx.fillStyle = '#7fff7a';
+      ctx.font = 'bold 14px "Courier New", monospace';
+      ctx.fillText('READY!', 0, -42);
+    } else {
+      ctx.fillStyle = '#ffd54f';
+      ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.fillText('◀  SELECT  ▶', 0, -42);
+    }
+    ctx.restore();
+  }
+
+  global.Game = {
+    init,
+    update,
+    render,
+    state: () => game.state,
+  };
+})(window);
+
+// main.js — bootstrap and main loop
+(function () {
+  function start() {
+    const canvas = document.getElementById('game');
+    Sprites.init();
+    Game.init(canvas);
+
+    let last = performance.now();
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      Game.update(dt);
+      Game.render();
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+
+</script>
+</body>
+</html>

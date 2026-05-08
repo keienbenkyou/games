@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Pixel Chef - Retro Cooking Game</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; background: #1a1a2e;
+    font-family: "Courier New", monospace; color: #f5f5f5;
+    overflow: hidden; touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: #000;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 0 4px #444, 0 0 40px #000;
+    max-width: 100vw; max-height: 100vh;
+  }
+  #hint {
+    position: fixed; bottom: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: #888; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="480" height="320"></canvas></div>
+<div id="hint">Arrow keys / tap • Enter / tap button to confirm</div>
+<script>
+/* =========================================================
+   PIXEL CHEF — retro cooking mini-game
+   Single-file HTML5 canvas game. No external assets.
+   Scenes: CHARACTER -> MENU -> COOK -> RESULT
+   ========================================================= */
+(() => {
+  const cvs = document.getElementById('game');
+  const ctx = cvs.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const W = cvs.width, H = cvs.height;
+
+  // ---- Input ----
+  const keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  // Touch taps: map to logical button hit-tests per scene
+  const touches = []; // queued taps {x,y}
+  function addTap(clientX, clientY) {
+    const r = cvs.getBoundingClientRect();
+    const x = (clientX - r.left) * (W / r.width);
+    const y = (clientY - r.top) * (H / r.height);
+    touches.push({x, y});
+  }
+  cvs.addEventListener('touchstart', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) addTap(t.clientX, t.clientY);
+  }, {passive:false});
+  cvs.addEventListener('mousedown', e => addTap(e.clientX, e.clientY));
+
+  function consumeTapIn(x, y, w, h) {
+    for (let i = 0; i < touches.length; i++) {
+      const t = touches[i];
+      if (t.x >= x && t.x <= x + w && t.y >= y && t.y <= y + h) {
+        touches.splice(i, 1);
+        return true;
+      }
+    }
+    return false;
+  }
+  function clearTaps(){ touches.length = 0; }
+
+  // Edge-triggered key helper
+  const prevKeys = {};
+  function keyPressed(k){
+    const cur = !!keys[k], prev = !!prevKeys[k];
+    return cur && !prev;
+  }
+  function endFrameKeys(){
+    for (const k of Object.keys(keys)) prevKeys[k] = keys[k];
+  }
+
+  // ---- Palette ----
+  const PAL = {
+    bg: '#2b2b3d', wood: '#8a5a2b', wood2:'#6b4220',
+    stove: '#4b4b55', stove2:'#2c2c33', flame:'#ff8a3c',
+    panel:'#1a1a2e', panelLite:'#3c3c5a',
+    text:'#fff5d6', accent:'#ffd166', good:'#06d6a0', bad:'#ef476f',
+    skin:['#f7d1a1','#d9a066','#8b5a2b','#e0ac69'],
+    shirt:['#ffffff','#ef476f','#118ab2','#06d6a0','#ffd166','#7a5cff'],
+    hat:['#ffffff','#e0e0e0','#ffd166','#ef476f'],
+  };
+
+  // ---- Small pixel drawing helpers ----
+  function px(x,y,c,s=1){ ctx.fillStyle = c; ctx.fillRect(x|0,y|0,s,s); }
+  function rect(x,y,w,h,c){ ctx.fillStyle = c; ctx.fillRect(x|0,y|0,w|0,h|0); }
+  function rectOutline(x,y,w,h,c){ ctx.strokeStyle=c; ctx.lineWidth=1; ctx.strokeRect((x|0)+0.5,(y|0)+0.5,(w|0)-1,(h|0)-1); }
+
+  // Bitmap text (tiny 5x7)
+  const FONT = (() => {
+    // 5x7 uppercase font subset; '.' ':' '!' '?' ',' '/' digits and a-z fallback
+    const G = {};
+    const d = (ch, rows) => G[ch] = rows;
+    d('A',['01110','10001','10001','11111','10001','10001','10001']);
+    d('B',['11110','10001','10001','11110','10001','10001','11110']);
+    d('C',['01111','10000','10000','10000','10000','10000','01111']);
+    d('D',['11110','10001','10001','10001','10001','10001','11110']);
+    d('E',['11111','10000','10000','11110','10000','10000','11111']);
+    d('F',['11111','10000','10000','11110','10000','10000','10000']);
+    d('G',['01111','10000','10000','10011','10001','10001','01111']);
+    d('H',['10001','10001','10001','11111','10001','10001','10001']);
+    d('I',['11111','00100','00100','00100','00100','00100','11111']);
+    d('J',['00111','00010','00010','00010','00010','10010','01100']);
+    d('K',['10001','10010','10100','11000','10100','10010','10001']);
+    d('L',['10000','10000','10000','10000','10000','10000','11111']);
+    d('M',['10001','11011','10101','10101','10001','10001','10001']);
+    d('N',['10001','11001','10101','10011','10001','10001','10001']);
+    d('O',['01110','10001','10001','10001','10001','10001','01110']);
+    d('P',['11110','10001','10001','11110','10000','10000','10000']);
+    d('Q',['01110','10001','10001','10001','10101','10010','01101']);
+    d('R',['11110','10001','10001','11110','10100','10010','10001']);
+    d('S',['01111','10000','10000','01110','00001','00001','11110']);
+    d('T',['11111','00100','00100','00100','00100','00100','00100']);
+    d('U',['10001','10001','10001','10001','10001','10001','01110']);
+    d('V',['10001','10001','10001','10001','10001','01010','00100']);
+    d('W',['10001','10001','10001','10101','10101','10101','01010']);
+    d('X',['10001','10001','01010','00100','01010','10001','10001']);
+    d('Y',['10001','10001','10001','01010','00100','00100','00100']);
+    d('Z',['11111','00001','00010','00100','01000','10000','11111']);
+    d('0',['01110','10001','10011','10101','11001','10001','01110']);
+    d('1',['00100','01100','00100','00100','00100','00100','01110']);
+    d('2',['01110','10001','00001','00110','01000','10000','11111']);
+    d('3',['11110','00001','00001','01110','00001','00001','11110']);
+    d('4',['00010','00110','01010','10010','11111','00010','00010']);
+    d('5',['11111','10000','11110','00001','00001','10001','01110']);
+    d('6',['00110','01000','10000','11110','10001','10001','01110']);
+    d('7',['11111','00001','00010','00100','01000','01000','01000']);
+    d('8',['01110','10001','10001','01110','10001','10001','01110']);
+    d('9',['01110','10001','10001','01111','00001','00010','01100']);
+    d(' ',['00000','00000','00000','00000','00000','00000','00000']);
+    d('.',['00000','00000','00000','00000','00000','00100','00100']);
+    d(',',['00000','00000','00000','00000','00100','00100','01000']);
+    d(':',['00000','00100','00000','00000','00100','00000','00000']);
+    d('!',['00100','00100','00100','00100','00100','00000','00100']);
+    d('?',['01110','10001','00010','00100','00100','00000','00100']);
+    d('/',['00001','00010','00010','00100','01000','01000','10000']);
+    d("'",['00100','00100','00000','00000','00000','00000','00000']);
+    d('-',['00000','00000','00000','11111','00000','00000','00000']);
+    d('+',['00000','00100','00100','11111','00100','00100','00000']);
+    d('(',['00010','00100','01000','01000','01000','00100','00010']);
+    d(')',['01000','00100','00010','00010','00010','00100','01000']);
+    d('>',['01000','00100','00010','00001','00010','00100','01000']);
+    d('<',['00010','00100','01000','10000','01000','00100','00010']);
+    d('%',['11001','11010','00100','01000','10110','10011','00000']);
+    d('*',['00000','10101','01110','11111','01110','10101','00000']);
+    return G;
+  })();
+
+  function drawText(s, x, y, color='#fff', scale=1){
+    s = (s+'').toUpperCase();
+    let cx = x|0;
+    const cy = y|0;
+    ctx.fillStyle = color;
+    for (let i = 0; i < s.length; i++){
+      const ch = s[i];
+      const g = FONT[ch] || FONT['?'];
+      for (let r = 0; r < 7; r++){
+        const row = g[r];
+        for (let c = 0; c < 5; c++){
+          if (row[c] === '1') ctx.fillRect(cx + c*scale, cy + r*scale, scale, scale);
+        }
+      }
+      cx += 6*scale;
+    }
+  }
+  function textW(s, scale=1){ return (s+'').length * 6 * scale; }
+  function drawTextCentered(s, cx, y, color, scale=1){
+    drawText(s, cx - textW(s,scale)/2, y, color, scale);
+  }
+
+  // ---- Game state ----
+  const state = {
+    scene: 'CHARACTER',
+    chef: { head:0, body:0, hat:0 },   // indices into option arrays
+    headOpts: [0,1,2,3],               // skin tone indices
+    bodyOpts: [0,1,2,3,4,5],           // shirt color
+    hatOpts:  [0,1,2,3],               // hat style
+    cuisineIdx: 0,
+    cuisines: null,
+    round: 0,            // which dish (0..2)
+    score: 0,
+    timer: 0,            // seconds remaining for current dish
+    timerMax: 0,
+    flash: null,         // {text, color, t}
+    anim: 0,
+  };
+
+  // ---- Cuisine / Recipe data ----
+  // Each cuisine has 3 dishes. Each dish has an ordered ingredient+action list.
+  // Ingredient icons are tiny pixel tags drawn in drawIngredient().
+  state.cuisines = [
+    { name:'CHINESE',
+      dishes:[
+        { name:'FRIED RICE', time:20, steps:[
+          {ing:'RICE', action:'PAN'},
+          {ing:'EGG',  action:'PAN'},
+          {ing:'SOY',  action:'PAN'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+        { name:'DUMPLINGS', time:22, steps:[
+          {ing:'DOUGH',action:'WRAP'},
+          {ing:'PORK', action:'WRAP'},
+          {ing:'WATER',action:'BOIL'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+        { name:'KUNG PAO', time:24, steps:[
+          {ing:'CHILI',action:'PAN'},
+          {ing:'CHICKEN',action:'PAN'},
+          {ing:'PEANUT',action:'PAN'},
+          {ing:'SOY',  action:'PAN'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+      ]},
+    { name:'WESTERN',
+      dishes:[
+        { name:'BURGER', time:20, steps:[
+          {ing:'BUN', action:'ASSEMBLE'},
+          {ing:'PATTY',action:'GRILL'},
+          {ing:'CHEESE',action:'ASSEMBLE'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+        { name:'PASTA', time:22, steps:[
+          {ing:'WATER',action:'BOIL'},
+          {ing:'PASTA',action:'BOIL'},
+          {ing:'TOMATO',action:'PAN'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+        { name:'STEAK', time:24, steps:[
+          {ing:'STEAK',action:'GRILL'},
+          {ing:'SALT', action:'PAN'},
+          {ing:'HERB', action:'PAN'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+      ]},
+    { name:'JAPANESE',
+      dishes:[
+        { name:'SUSHI', time:20, steps:[
+          {ing:'RICE',action:'ROLL'},
+          {ing:'FISH',action:'ROLL'},
+          {ing:'NORI',action:'ROLL'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+        { name:'RAMEN', time:22, steps:[
+          {ing:'WATER',action:'BOIL'},
+          {ing:'NOODLE',action:'BOIL'},
+          {ing:'EGG', action:'BOIL'},
+          {ing:'PORK',action:'PAN'},
+          {ing:'PLATE',action:'SERVE'},
+        ]},
+        { name:'TEMPURA', time:22, steps:[
+          {ing:'SHRIMP',action:'FRY'},
+          {ing:'VEG',   action:'FRY'},
+          {ing:'SAUCE', action:'PAN'},
+          {ing:'PLATE', action:'SERVE'},
+        ]},
+      ]},
+  ];
+
+  // ---- Drawing: chef sprite ----
+  function drawChef(ox, oy, big=false){
+    // big doubles pixel size (2). Sprite nominal 16x24.
+    const s = big ? 3 : 2;
+    const head = PAL.skin[state.chef.head];
+    const body = PAL.shirt[state.chef.body];
+    const hat  = PAL.hat[state.chef.hat];
+    // head
+    rect(ox+4*s, oy+3*s, 8*s, 8*s, head);
+    // eyes
+    rect(ox+6*s, oy+6*s, 1*s, 1*s, '#222');
+    rect(ox+9*s, oy+6*s, 1*s, 1*s, '#222');
+    // smile
+    rect(ox+7*s, oy+8*s, 2*s, 1*s, '#7a3b2e');
+    // hat variants
+    if (state.chef.hat === 0){ // tall puffy
+      rect(ox+3*s, oy+0*s, 10*s, 3*s, hat);
+      rect(ox+2*s, oy+1*s, 12*s, 2*s, hat);
+      rect(ox+4*s, oy+3*s-1, 8*s, 1, '#cfcfcf');
+    } else if (state.chef.hat === 1){ // short toque
+      rect(ox+4*s, oy+1*s, 8*s, 2*s, hat);
+      rect(ox+3*s, oy+2*s, 10*s, 1*s, hat);
+    } else if (state.chef.hat === 2){ // bandana
+      rect(ox+3*s, oy+2*s, 10*s, 2*s, hat);
+      rect(ox+12*s, oy+3*s, 2*s, 2*s, hat);
+    } else { // cap with brim
+      rect(ox+4*s, oy+1*s, 8*s, 2*s, hat);
+      rect(ox+2*s, oy+3*s, 8*s, 1*s, hat);
+    }
+    // body / apron
+    rect(ox+3*s, oy+11*s, 10*s, 8*s, body);
+    // apron white stripe
+    rect(ox+6*s, oy+12*s, 4*s, 7*s, '#f4f4f4');
+    // arms
+    rect(ox+2*s, oy+12*s, 2*s, 5*s, body);
+    rect(ox+12*s,oy+12*s, 2*s, 5*s, body);
+    // hands
+    rect(ox+2*s, oy+17*s, 2*s, 2*s, head);
+    rect(ox+12*s,oy+17*s, 2*s, 2*s, head);
+    // legs
+    rect(ox+4*s, oy+19*s, 3*s, 4*s, '#222');
+    rect(ox+9*s, oy+19*s, 3*s, 4*s, '#222');
+    // shoes
+    rect(ox+4*s, oy+22*s, 3*s, 1*s, '#111');
+    rect(ox+9*s, oy+22*s, 3*s, 1*s, '#111');
+  }
+
+  // ---- Drawing: tiny ingredient icon (16x16) ----
+  function drawIngredient(name, ox, oy, scale=1){
+    const s = scale;
+    const R = (x,y,w,h,c) => rect(ox+x*s,oy+y*s,w*s,h*s,c);
+    switch(name){
+      case 'RICE':
+        R(2,5,12,8,'#f4f1de'); R(3,6,10,6,'#ffffff'); R(4,4,8,2,'#f4f1de'); break;
+      case 'EGG':
+        R(5,4,6,8,'#fffbe6'); R(4,6,8,5,'#fffbe6'); R(7,7,2,2,'#ffd166'); break;
+      case 'SOY':
+        R(5,3,6,2,'#222'); R(4,5,8,8,'#3b1f14'); R(11,7,2,2,'#3b1f14'); break;
+      case 'DOUGH':
+        R(4,5,8,7,'#f1dca7'); R(3,7,10,3,'#f1dca7'); break;
+      case 'PORK':
+        R(3,6,10,5,'#d97a6c'); R(4,5,8,1,'#f7b2a3'); R(5,9,6,1,'#b0432f'); break;
+      case 'WATER':
+        R(4,4,8,9,'#118ab2'); R(5,3,6,2,'#79c6dd'); break;
+      case 'CHILI':
+        R(6,3,4,2,'#2a7d2e'); R(5,5,6,8,'#ef476f'); R(6,6,4,5,'#ff6b85'); break;
+      case 'CHICKEN':
+        R(3,6,10,5,'#f3c26b'); R(4,5,8,1,'#ffdfa0'); R(5,10,6,1,'#b07a2b'); break;
+      case 'PEANUT':
+        R(4,5,4,4,'#c99857'); R(8,7,4,4,'#c99857'); R(5,6,2,2,'#ffe2a8'); R(9,8,2,2,'#ffe2a8'); break;
+      case 'PLATE':
+        R(2,9,12,3,'#e5e5e5'); R(3,8,10,1,'#bdbdbd'); break;
+      case 'BUN':
+        R(3,5,10,5,'#d49a4a'); R(3,10,10,1,'#a56a22'); R(5,4,6,1,'#eac27b'); break;
+      case 'PATTY':
+        R(3,7,10,3,'#5c3317'); R(3,6,10,1,'#7a4422'); break;
+      case 'CHEESE':
+        R(3,6,10,4,'#ffd166'); R(4,5,8,1,'#ffe199'); break;
+      case 'PASTA':
+        R(3,5,10,8,'#f2d49a'); R(4,6,8,1,'#ffe9b8'); R(4,9,8,1,'#ffe9b8'); break;
+      case 'TOMATO':
+        R(4,4,8,8,'#ef476f'); R(7,3,2,1,'#2a7d2e'); break;
+      case 'STEAK':
+        R(3,6,10,5,'#7a3b2e'); R(3,5,10,1,'#a04a3a'); break;
+      case 'SALT':
+        R(5,3,6,3,'#cccccc'); R(4,6,8,6,'#eeeeee'); break;
+      case 'HERB':
+        R(6,3,4,3,'#2a7d2e'); R(4,5,8,6,'#3ea145'); break;
+      case 'FISH':
+        R(3,6,9,4,'#f19ca7'); R(11,5,3,6,'#f19ca7'); R(5,7,2,1,'#222'); break;
+      case 'NORI':
+        R(3,5,10,7,'#0f3d3e'); R(4,6,8,1,'#16615e'); break;
+      case 'NOODLE':
+        R(3,5,10,8,'#f2d49a'); R(3,7,10,1,'#e8bd77'); R(3,10,10,1,'#e8bd77'); break;
+      case 'SHRIMP':
+        R(4,6,8,4,'#ff9f6b'); R(11,5,3,3,'#ff6b6b'); break;
+      case 'VEG':
+        R(4,5,8,7,'#3ea145'); R(6,4,4,2,'#2a7d2e'); break;
+      case 'SAUCE':
+        R(4,4,8,9,'#6b2e2e'); R(5,3,6,2,'#b84a4a'); break;
+      default:
+        R(4,4,8,8,'#888');
+    }
+    // outline glow
+  }
+
+  // ---- Drawing: kitchen ----
+  function drawKitchen(){
+    // floor
+    rect(0,0,W,H,'#1b1b26');
+    // back wall
+    rect(0,0,W,160,'#33344a');
+    // tiles
+    for (let y=0;y<160;y+=20){
+      for (let x=0;x<W;x+=24){
+        rect(x,y,23,1,'#2a2b40');
+        rect(x,y,1,19,'#2a2b40');
+      }
+    }
+    // counter
+    rect(0,190,W,130,PAL.wood);
+    rect(0,190,W,3,PAL.wood2);
+    for (let x=0;x<W;x+=32){ rect(x,193,1,127,PAL.wood2); }
+    // stove
+    rect(300,150,140,50,PAL.stove2);
+    rect(302,152,136,46,PAL.stove);
+    rect(312,162,40,28,'#111');
+    rect(392,162,40,28,'#111');
+    // flame (animated)
+    const f = Math.sin(state.anim*0.3)*2;
+    rect(320,168+f,8,8,PAL.flame);
+    rect(332,168-f,8,8,'#ffd166');
+    rect(400,168+f,8,8,PAL.flame);
+    rect(412,168-f,8,8,'#ffd166');
+    // window
+    rect(40,30,160,80,'#a4d8f0');
+    rect(40,30,160,2,'#5a93b0');
+    rect(40,70,160,2,'#5a93b0');
+    rect(118,30,2,80,'#5a93b0');
+    // hanging pots
+    rect(250,30,4,20,'#888');
+    rect(240,50,24,12,'#333');
+    rect(240,50,24,2,'#555');
+  }
+
+  // ---- Scene: CHARACTER ----
+  function sceneCharacter(dt){
+    rect(0,0,W,H, PAL.panel);
+    // title
+    drawTextCentered('PIXEL CHEF', W/2, 16, PAL.accent, 2);
+    drawTextCentered('CREATE YOUR CHEF', W/2, 44, PAL.text, 1);
+
+    // Preview chef large
+    drawChef(W/2 - 28, 60, true);
+
+    // Option rows: Head / Body / Hat
+    const rows = [
+      {label:'HEAD', key:'head', max:state.headOpts.length},
+      {label:'BODY', key:'body', max:state.bodyOpts.length},
+      {label:'HAT',  key:'hat',  max:state.hatOpts.length},
+    ];
+    const baseY = 170;
+    rows.forEach((r, i) => {
+      const y = baseY + i*28;
+      drawText(r.label, 40, y+6, PAL.text, 1);
+      // < button
+      rect(100, y, 20, 20, PAL.panelLite);
+      drawText('<', 106, y+6, PAL.accent, 1);
+      // value box
+      rect(124, y, 60, 20, '#222');
+      drawTextCentered(String(state.chef[r.key]+1)+'/'+r.max, 124+30, y+6, PAL.text, 1);
+      // > button
+      rect(188, y, 20, 20, PAL.panelLite);
+      drawText('>', 194, y+6, PAL.accent, 1);
+
+      // touch handlers
+      if (consumeTapIn(100,y,20,20)) state.chef[r.key] = (state.chef[r.key]-1+r.max)%r.max;
+      if (consumeTapIn(188,y,20,20)) state.chef[r.key] = (state.chef[r.key]+1)%r.max;
+    });
+
+    // keyboard: up/down rows, left/right cycle
+    if (!sceneCharacter._row) sceneCharacter._row = 0;
+    if (keyPressed('ArrowDown')) sceneCharacter._row = (sceneCharacter._row+1)%3;
+    if (keyPressed('ArrowUp'))   sceneCharacter._row = (sceneCharacter._row+2)%3;
+    const r = rows[sceneCharacter._row];
+    if (keyPressed('ArrowLeft'))  state.chef[r.key] = (state.chef[r.key]-1+r.max)%r.max;
+    if (keyPressed('ArrowRight')) state.chef[r.key] = (state.chef[r.key]+1)%r.max;
+    // selection marker
+    const selY = baseY + sceneCharacter._row*28;
+    rectOutline(96, selY-2, 116, 24, PAL.accent);
+
+    // Confirm button
+    const bx = W-140, by = H-40;
+    rect(bx, by, 110, 28, PAL.good);
+    drawTextCentered('START >', bx+55, by+10, '#003b2a', 1);
+    if (consumeTapIn(bx,by,110,28) || keyPressed('Enter') || keyPressed(' ')){
+      state.scene = 'MENU';
+      clearTaps();
+    }
+  }
+
+  // ---- Scene: MENU ----
+  function sceneMenu(dt){
+    rect(0,0,W,H, PAL.panel);
+    drawTextCentered('CHOOSE CUISINE', W/2, 16, PAL.accent, 2);
+
+    // Chef mini preview top-left
+    drawChef(10, 10, false);
+
+    const cs = state.cuisines;
+    const cardW = 130, cardH = 180, gap = 15;
+    const totalW = cs.length*cardW + (cs.length-1)*gap;
+    const startX = (W - totalW)/2;
+    const y = 70;
+
+    cs.forEach((c, i) => {
+      const x = startX + i*(cardW+gap);
+      const selected = state.cuisineIdx === i;
+      rect(x, y, cardW, cardH, selected ? '#40406a' : '#2a2a42');
+      rectOutline(x, y, cardW, cardH, selected ? PAL.accent : '#555');
+      drawTextCentered(c.name, x+cardW/2, y+8, PAL.accent, 1);
+      // draw 3 dish icons
+      c.dishes.forEach((d, j) => {
+        const dx = x + 10, dy = y + 30 + j*44;
+        rect(dx, dy, cardW-20, 36, '#1c1c2c');
+        drawIngredient(d.steps[0].ing, dx+4, dy+4, 1.5);
+        drawText(d.name, dx+28, dy+6, PAL.text, 1);
+        drawText(d.time+'S', dx+28, dy+18, '#aaa', 1);
+      });
+      if (consumeTapIn(x,y,cardW,cardH)) state.cuisineIdx = i;
+    });
+
+    if (keyPressed('ArrowLeft'))  state.cuisineIdx = (state.cuisineIdx-1+cs.length)%cs.length;
+    if (keyPressed('ArrowRight')) state.cuisineIdx = (state.cuisineIdx+1)%cs.length;
+
+    // Start cooking button
+    const bx = W/2 - 70, by = H-36;
+    rect(bx, by, 140, 28, PAL.good);
+    drawTextCentered('COOK!', bx+70, by+10, '#003b2a', 1);
+    if (consumeTapIn(bx,by,140,28) || keyPressed('Enter') || keyPressed(' ')){
+      startRound(0);
+      clearTaps();
+    }
+
+    // Back button
+    rect(10, H-36, 60, 28, PAL.panelLite);
+    drawTextCentered('BACK', 40, H-26, PAL.text, 1);
+    if (consumeTapIn(10,H-36,60,28)) { state.scene='CHARACTER'; clearTaps(); }
+  }
+
+  // ---- Cooking round ----
+  function currentDish(){ return state.cuisines[state.cuisineIdx].dishes[state.round]; }
+
+  function startRound(idx){
+    state.round = idx;
+    const d = currentDish();
+    state.timerMax = d.time;
+    state.timer = d.time;
+    state.progress = 0; // how many ingredients correctly applied
+    state.wrong = 0;
+    state.cookMsg = '';
+    state.cookMsgT = 0;
+    // build shuffled ingredient palette (unique ingredients from ALL cuisines to add decoys)
+    const required = d.steps.map(s => s.ing);
+    const decoyPool = [];
+    for (const c of state.cuisines){
+      for (const dd of c.dishes){
+        for (const s of dd.steps){
+          if (!required.includes(s.ing) && !decoyPool.includes(s.ing)) decoyPool.push(s.ing);
+        }
+      }
+    }
+    // pick 3 decoys
+    const decoys = [];
+    while (decoys.length < 3 && decoyPool.length){
+      const i = Math.floor(Math.random()*decoyPool.length);
+      decoys.push(decoyPool.splice(i,1)[0]);
+    }
+    const pool = [...new Set([...required, ...decoys])];
+    // shuffle
+    for (let i = pool.length-1; i>0; i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    state.ingredientPool = pool;
+    state.selected = 0;
+    state.scene = 'COOK';
+    clearTaps();
+  }
+
+  function sceneCook(dt){
+    drawKitchen();
+
+    const d = currentDish();
+    // Chef at counter
+    drawChef(60, 150, false);
+
+    // Timer bar
+    state.timer = Math.max(0, state.timer - dt);
+    const pct = state.timer / state.timerMax;
+    rect(20, 10, 200, 10, '#111');
+    rect(20, 10, Math.floor(200*pct), 10, pct>0.4?PAL.good: pct>0.2?PAL.accent:PAL.bad);
+    rectOutline(20,10,200,10,'#fff');
+    drawText('TIME '+Math.ceil(state.timer)+'S', 20, 24, PAL.text, 1);
+
+    // Dish label
+    drawTextCentered(d.name + '  ('+(state.round+1)+'/3)', W/2, 10, PAL.accent, 1);
+
+    // Recipe panel (steps)
+    const px_ = W - 150, py_ = 10;
+    rect(px_, py_, 140, 120, '#00000088');
+    rectOutline(px_, py_, 140, 120, '#fff');
+    drawText('RECIPE:', px_+6, py_+4, PAL.accent, 1);
+    d.steps.forEach((s, i) => {
+      const done = i < state.progress;
+      const y = py_ + 18 + i*16;
+      const col = done ? PAL.good : (i === state.progress ? PAL.accent : '#bbb');
+      drawText((done?'*':(i===state.progress?'>':'-'))+' '+s.ing, px_+6, y, col, 1);
+    });
+
+    // Ingredient pool at bottom
+    const poolY = H - 90;
+    drawText('INGREDIENTS (CLICK / ARROWS + ENTER):', 20, poolY-12, PAL.text, 1);
+    const cell = 40, gap = 6;
+    const startX = 20;
+    state.ingredientPool.forEach((ing, i) => {
+      const x = startX + i*(cell+gap);
+      const sel = i === state.selected;
+      rect(x, poolY, cell, cell, sel ? '#553' : '#222');
+      rectOutline(x, poolY, cell, cell, sel ? PAL.accent : '#666');
+      drawIngredient(ing, x+4, poolY+4, 2);
+      drawText(ing, x+2, poolY+cell+2, '#ddd', 1);
+      if (consumeTapIn(x, poolY, cell, cell+12)) {
+        state.selected = i;
+        applyIngredient();
+      }
+    });
+
+    // Keyboard controls
+    if (keyPressed('ArrowLeft'))  state.selected = (state.selected-1+state.ingredientPool.length)%state.ingredientPool.length;
+    if (keyPressed('ArrowRight')) state.selected = (state.selected+1)%state.ingredientPool.length;
+    if (keyPressed('Enter') || keyPressed(' ')) applyIngredient();
+
+    // Flash msg
+    if (state.cookMsgT > 0){
+      state.cookMsgT -= dt;
+      drawTextCentered(state.cookMsg, W/2, 120, state.cookMsgColor, 2);
+    }
+
+    // Check end conditions
+    if (state.progress >= d.steps.length){
+      // dish done
+      const timeBonus = Math.floor(state.timer * 5);
+      const penalty = state.wrong * 10;
+      state.score += 100 + timeBonus - penalty;
+      nextRoundOrFinish(true);
+    } else if (state.timer <= 0){
+      nextRoundOrFinish(false);
+    }
+  }
+
+  function applyIngredient(){
+    const d = currentDish();
+    const need = d.steps[state.progress].ing;
+    const got = state.ingredientPool[state.selected];
+    if (got === need){
+      state.progress++;
+      state.cookMsg = 'NICE!';
+      state.cookMsgColor = PAL.good;
+      state.cookMsgT = 0.5;
+    } else {
+      state.wrong++;
+      state.timer = Math.max(0, state.timer - 2); // penalty
+      state.cookMsg = 'WRONG -2S';
+      state.cookMsgColor = PAL.bad;
+      state.cookMsgT = 0.6;
+    }
+  }
+
+  function nextRoundOrFinish(cleared){
+    state.flash = { text: cleared ? 'DISH CLEARED!' : 'TIME UP!', color: cleared?PAL.good:PAL.bad, t: 1.2 };
+    if (state.round+1 < 3){
+      setTimeout(() => startRound(state.round+1), 900);
+      state.scene = 'INTERLUDE';
+    } else {
+      setTimeout(() => { state.scene = 'RESULT'; clearTaps(); }, 900);
+      state.scene = 'INTERLUDE';
+    }
+  }
+
+  function sceneInterlude(dt){
+    drawKitchen();
+    drawChef(W/2 - 16, 120, false);
+    if (state.flash){
+      drawTextCentered(state.flash.text, W/2, 80, state.flash.color, 2);
+    }
+    drawTextCentered('SCORE: '+state.score, W/2, 240, PAL.text, 1);
+  }
+
+  // ---- Scene: RESULT ----
+  function sceneResult(dt){
+    rect(0,0,W,H, PAL.panel);
+    drawTextCentered('SHIFT OVER!', W/2, 30, PAL.accent, 2);
+    drawChef(W/2 - 24, 70, true);
+    drawTextCentered('FINAL SCORE', W/2, 180, PAL.text, 1);
+    drawTextCentered(String(state.score), W/2, 200, PAL.accent, 2);
+
+    const grade = state.score >= 300 ? 'S CHEF!' :
+                  state.score >= 200 ? 'A COOK' :
+                  state.score >= 100 ? 'B COOK' : 'KEEP PRACTICING';
+    drawTextCentered(grade, W/2, 230, PAL.good, 1);
+
+    const bx = W/2 - 70, by = H-40;
+    rect(bx, by, 140, 28, PAL.good);
+    drawTextCentered('PLAY AGAIN', bx+70, by+10, '#003b2a', 1);
+    if (consumeTapIn(bx,by,140,28) || keyPressed('Enter') || keyPressed(' ')){
+      state.score = 0; state.scene = 'MENU'; clearTaps();
+    }
+  }
+
+  // ---- Main loop ----
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.05, (now - last)/1000);
+    last = now;
+    state.anim += dt;
+
+    switch(state.scene){
+      case 'CHARACTER': sceneCharacter(dt); break;
+      case 'MENU':      sceneMenu(dt); break;
+      case 'COOK':      sceneCook(dt); break;
+      case 'INTERLUDE': sceneInterlude(dt); break;
+      case 'RESULT':    sceneResult(dt); break;
+    }
+
+    // Drop old taps every frame to prevent queue buildup in dead zones
+    if (touches.length > 30) touches.length = 0;
+
+    endFrameKeys();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

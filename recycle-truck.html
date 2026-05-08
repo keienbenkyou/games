@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Recycle Truck — Tiny Helper</title>
+<style>
+  html,body{margin:0;height:100%;background:#0e1320;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+    touch-action:none;overscroll-behavior:none;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;background:#79c8ff;
+    box-shadow:0 0 0 4px #1b2440, 0 12px 30px rgba(0,0,0,.45);border-radius:6px;}
+  #hint{position:fixed;left:0;right:0;bottom:8px;text-align:center;color:#cdd6ff;
+    font-size:12px;opacity:.55;pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="480" height="320"></canvas></div>
+<div id="hint">Tap to play • Add to Home Screen for fullscreen</div>
+<script>
+/* =====================================================================
+   Recycle Truck — Tiny Helper
+   Single-file retro pixel-art game for 4–5 yo toddlers (iPad-first).
+   No external assets: all sprites drawn procedurally on a 480x320 canvas.
+   =====================================================================
+   Architecture (state machine)
+     SPLASH   -> tap to start
+     PICK_TRUCK
+     PICK_WORKER
+     PLAY     -> 10 items, drag rubbish into the correct bin
+     DRIVE    -> truck animates to recycling centre
+     RESULT   -> shows score, tap to play again
+   ===================================================================== */
+
+(() => {
+'use strict';
+
+// ---------- Canvas & scaling --------------------------------------------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const W = canvas.width, H = canvas.height;
+
+function fit() {
+  const pad = 16;
+  const sw = window.innerWidth - pad, sh = window.innerHeight - pad;
+  const s = Math.max(1, Math.floor(Math.min(sw / W, sh / H)));
+  canvas.style.width  = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+window.addEventListener('resize', fit);
+window.addEventListener('orientationchange', fit);
+fit();
+
+// ---------- Palette (NES-ish, friendly) ---------------------------------
+const C = {
+  sky:'#79c8ff', sky2:'#a9e0ff', cloud:'#ffffff',
+  ground:'#7bcf57', ground2:'#5aab3a', road:'#3d3d4a', line:'#ffd84a',
+  truckPaint:['#2e8bd6','#7ad26a','#e36a3d'], // blue, green, red
+  truckShade:'#1d2740', tire:'#181820', metal:'#bcc0c8', glass:'#bfe9ff',
+  paperBin:'#3a76d4', plasticBin:'#d4a338', glassBin:'#5fb35e', trashBin:'#5a5a5a',
+  shadow:'rgba(0,0,0,.25)',
+  skin:['#f1c69b','#d39a72','#8a5a3b'],
+  shirt:['#e84545','#3aa3e8','#f7c948','#7ad26a'],
+  text:'#1b2440', textLight:'#fff', warn:'#ff5d5d', good:'#3ad28a'
+};
+
+// ---------- Audio (tiny WebAudio beeps, no files) -----------------------
+let actx = null;
+function ac(){ if(!actx) try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} return actx; }
+function beep(freq=600, dur=0.08, type='square', vol=0.06){
+  const a = ac(); if(!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.value = vol;
+  o.connect(g); g.connect(a.destination);
+  o.start();
+  g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+  o.stop(a.currentTime + dur);
+}
+const sfx = {
+  tap:   () => beep(880,0.05,'square',0.05),
+  good:  () => { beep(700,0.08); setTimeout(()=>beep(1040,0.10),70); },
+  bad:   () => beep(160,0.18,'sawtooth',0.06),
+  drive: () => beep(220,0.20,'triangle',0.05),
+  cheer: () => { beep(660,0.1); setTimeout(()=>beep(880,0.1),100); setTimeout(()=>beep(1175,0.18),200); }
+};
+
+// ---------- Input (touch + mouse unified) -------------------------------
+const input = { x:0, y:0, down:false, justDown:false, justUp:false };
+function toCanvas(e){
+  const r = canvas.getBoundingClientRect();
+  const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+  const px = (t.clientX - r.left) / r.width  * W;
+  const py = (t.clientY - r.top ) / r.height * H;
+  input.x = px; input.y = py;
+}
+function onDown(e){ e.preventDefault(); ac(); toCanvas(e); input.down=true; input.justDown=true; }
+function onMove(e){ e.preventDefault(); toCanvas(e); }
+function onUp  (e){ e.preventDefault(); toCanvas(e); input.down=false; input.justUp=true; }
+canvas.addEventListener('touchstart', onDown, {passive:false});
+canvas.addEventListener('touchmove',  onMove, {passive:false});
+canvas.addEventListener('touchend',   onUp,   {passive:false});
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+window  .addEventListener('mouseup',   onUp);
+
+// ---------- Pixel-art helpers -------------------------------------------
+function px(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w|0,h|0); }
+function circle(cx,cy,r,c){
+  ctx.fillStyle=c;
+  for(let y=-r;y<=r;y++) for(let x=-r;x<=r;x++)
+    if(x*x+y*y<=r*r) ctx.fillRect((cx+x)|0,(cy+y)|0,1,1);
+}
+function text(s,x,y,col=C.text,size=8,align='left'){
+  ctx.fillStyle = col;
+  ctx.font = `${size}px -apple-system, system-ui, sans-serif`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'top';
+  ctx.fillText(s, x, y);
+}
+function bigText(s,x,y,col=C.text,size=18,align='center'){
+  text(s,x,y,col,size,align);
+}
+
+// ---------- World drawing -----------------------------------------------
+let cloudT = 0;
+function drawSkyAndGround(){
+  // sky
+  px(0,0,W,H,C.sky);
+  // sun
+  circle(60,50,14,'#ffe27a'); circle(60,50,10,'#fff2a8');
+  // clouds (parallax)
+  cloudT = (cloudT + 0.15) % (W+80);
+  drawCloud(((W+80) - cloudT)|0, 40);
+  drawCloud(((W+80) - (cloudT+160)%(W+80))|0, 70);
+  drawCloud(((W+80) - (cloudT+300)%(W+80))|0, 30);
+  // ground
+  px(0,H-90,W,90,C.ground);
+  px(0,H-70,W,4,C.ground2);
+  // road
+  px(0,H-50,W,40,C.road);
+  // dashed line
+  for(let x=0;x<W;x+=24) px(x,H-32,12,3,C.line);
+}
+function drawCloud(x,y){
+  px(x,y,18,6,C.cloud); px(x+4,y-4,12,6,C.cloud); px(x+10,y-2,12,6,C.cloud);
+}
+
+// ---------- Sprites -----------------------------------------------------
+// Truck: side-view, 3 color variants. anchor = bottom-left of body
+function drawTruck(x, y, paintIdx, fillLevel=0, wheelPhase=0){
+  const paint = C.truckPaint[paintIdx];
+  // shadow
+  px(x-2, y+2, 78, 4, C.shadow);
+  // chassis bar
+  px(x+2, y-6, 72, 6, C.truckShade);
+  // cab
+  px(x+2, y-26, 22, 20, paint);
+  px(x+4, y-24, 18, 2, '#1b2740');     // roof shade
+  px(x+4, y-22, 16, 8, C.glass);       // window
+  px(x+5, y-21, 7,  3, '#e6f6ff');     // window highlight
+  px(x+2, y-8,  22, 2, C.truckShade);
+  // hood/bumper
+  px(x-2, y-10, 4, 4, C.metal);
+  // recycling container (back)
+  px(x+24, y-30, 50, 24, paint);
+  px(x+24, y-30, 50, 2,  '#ffffff66');
+  px(x+24, y-8,  50, 2,  C.truckShade);
+  // recycling logo
+  px(x+45, y-22, 8, 8, '#ffffff');
+  px(x+47, y-20, 4, 4, paint);
+  // fill bar (visual progress inside container)
+  const maxFill = 44, fw = Math.round(maxFill * Math.min(1,fillLevel));
+  px(x+27, y-12, maxFill, 2, '#00000033');
+  if(fw>0) px(x+27, y-12, fw, 2, '#ffffffcc');
+  // wheels (rotating dot)
+  drawWheel(x+12, y, wheelPhase);
+  drawWheel(x+58, y, wheelPhase);
+}
+function drawWheel(cx, cy, phase){
+  circle(cx, cy, 6, C.tire);
+  circle(cx, cy, 3, C.metal);
+  // spoke marker rotating
+  const a = phase;
+  const sx = cx + Math.cos(a)*3, sy = cy + Math.sin(a)*3;
+  px(sx|0, sy|0, 1, 1, C.tire);
+}
+
+// Worker: 16x24 little person, 3 skins x several shirts
+function drawWorker(x, y, opt){
+  const sk = C.skin[opt.skin], sh = C.shirt[opt.shirt];
+  // shadow
+  px(x-2, y+1, 18, 3, C.shadow);
+  // legs
+  px(x+3, y-6, 4, 6, '#3a3f5a');
+  px(x+9, y-6, 4, 6, '#3a3f5a');
+  px(x+3, y, 4, 2, '#1b2440');
+  px(x+9, y, 4, 2, '#1b2440');
+  // body
+  px(x+2, y-14, 12, 8, sh);
+  // arms
+  px(x,   y-13, 2, 6, sh); px(x+14, y-13, 2, 6, sh);
+  px(x,   y-7,  2, 2, sk); px(x+14, y-7,  2, 2, sk);
+  // head
+  px(x+3, y-22, 10, 8, sk);
+  // hat (safety cap)
+  px(x+2, y-24, 12, 3, '#ffae3a');
+  px(x+2, y-25, 12, 1, '#cf7d18');
+  // eyes & smile
+  px(x+5,  y-18, 1, 1, '#1b2440');
+  px(x+10, y-18, 1, 1, '#1b2440');
+  px(x+6,  y-15, 4, 1, '#1b2440');
+}
+
+// Bins: paper / plastic / glass
+function drawBin(x, y, kind, hi=false){
+  const map = {
+    paper:   {col:C.paperBin,   label:'PAPER',   icon:'P'},
+    plastic: {col:C.plasticBin, label:'PLASTIC', icon:'≈'},
+    glass:   {col:C.glassBin,   label:'GLASS',   icon:'◇'},
+    trash:   {col:C.trashBin,   label:'TRASH',   icon:'✕'},
+  };
+  const m = map[kind];
+  // shadow
+  px(x-2, y+34, 44, 3, C.shadow);
+  // body
+  px(x, y, 40, 34, m.col);
+  px(x, y, 40, 3, '#ffffff55');
+  px(x, y+31, 40, 3, '#00000033');
+  // lid
+  px(x-2, y-4, 44, 5, m.col);
+  px(x-2, y-5, 44, 1, '#00000055');
+  // label
+  text(m.label, x+20, y+10, '#fff', 7, 'center');
+  text(m.icon,  x+20, y+18, '#fff', 9, 'center');
+  // highlight ring when hovered
+  if(hi){
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1;
+    ctx.strokeRect(x-3,y-6,46,42);
+  }
+}
+
+// Rubbish items: tiny 14x14 sprites, drawn procedurally
+const ITEMS = [
+  // paper
+  {key:'newspaper', cat:'paper',   draw:(x,y)=>{ px(x,y,14,12,'#f6f1d6'); px(x+1,y+2,12,1,'#9b9279'); px(x+1,y+5,12,1,'#9b9279'); px(x+1,y+8,12,1,'#9b9279'); }},
+  {key:'cardboard', cat:'paper',   draw:(x,y)=>{ px(x,y,14,10,'#c89464'); px(x,y+4,14,1,'#7a5635'); px(x,y+7,14,1,'#7a5635'); }},
+  {key:'magazine',  cat:'paper',   draw:(x,y)=>{ px(x,y,12,14,'#ff7ab6'); px(x+2,y+2,8,2,'#fff'); px(x+2,y+6,8,1,'#fff'); }},
+  // plastic
+  {key:'bottle',    cat:'plastic', draw:(x,y)=>{ px(x+5,y,4,3,'#3aa3e8'); px(x+4,y+3,6,11,'#9fdcff'); px(x+4,y+5,6,1,'#fff'); }},
+  {key:'cup',       cat:'plastic', draw:(x,y)=>{ px(x+2,y+2,10,10,'#eaf6ff'); px(x+2,y+2,10,2,'#cfe9ff'); px(x+3,y+12,8,1,'#a5c4d6'); }},
+  {key:'bag',       cat:'plastic', draw:(x,y)=>{ px(x+1,y+3,12,10,'#f3f3f3'); px(x+4,y,2,3,'#f3f3f3'); px(x+8,y,2,3,'#f3f3f3'); }},
+  // glass
+  {key:'jar',       cat:'glass',   draw:(x,y)=>{ px(x+3,y,8,2,'#7da38c'); px(x+2,y+2,10,12,'#bfe9d5'); px(x+3,y+4,1,8,'#fff'); }},
+  {key:'wine',      cat:'glass',   draw:(x,y)=>{ px(x+6,y,2,6,'#2e6b3a'); px(x+4,y+6,6,8,'#3aa35a'); px(x+5,y+7,1,4,'#fff'); }},
+  {key:'jam',       cat:'glass',   draw:(x,y)=>{ px(x+3,y,8,2,'#a83a3a'); px(x+2,y+2,10,12,'#e88aa0'); px(x+3,y+5,1,6,'#fff'); }},
+  // trash (non-recyclable distractors)
+  {key:'banana',    cat:'trash',   draw:(x,y)=>{ px(x+2,y+8,10,3,'#f7c948'); px(x+1,y+5,4,3,'#f7c948'); px(x+10,y+5,3,3,'#f7c948'); }},
+  {key:'food',      cat:'trash',   draw:(x,y)=>{ px(x+2,y+4,10,8,'#9b6b3a'); px(x+3,y+3,2,2,'#3aa35a'); px(x+8,y+3,2,2,'#3aa35a'); }},
+  {key:'tissue',    cat:'trash',   draw:(x,y)=>{ px(x+2,y+3,10,9,'#f3f3f3'); px(x+4,y+5,3,2,'#d6d6d6'); }},
+];
+
+// ---------- Game state --------------------------------------------------
+const STATE = {
+  scene: 'SPLASH',
+  truck: 0, worker: {skin:0, shirt:1},
+  // gameplay
+  itemsTotal: 10,
+  itemsDone: 0,
+  correct: 0,
+  current: null,        // current rubbish on conveyor
+  drag: null,           // {ox,oy} when grabbing item
+  feedback: null,       // {text,color,t}
+  // truck animation
+  truckX: 90,
+  driveT: 0,
+  wheelPhase: 0,
+  // splash
+  splashT: 0,
+};
+
+function newItem(){
+  // Mix categories so paper/plastic/glass appear; trash sometimes shows up
+  const pool = ITEMS.filter(i => Math.random() < 0.95);
+  const it = pool[(Math.random()*pool.length)|0];
+  return {
+    def: it,
+    x: 240, y: 180,
+    homeX: 240, homeY: 180,
+  };
+}
+
+function startGame(){
+  STATE.itemsDone = 0;
+  STATE.correct = 0;
+  STATE.current = newItem();
+  STATE.feedback = null;
+  STATE.truckX = 90;
+  STATE.scene = 'PLAY';
+}
+
+// ---------- Hit testing -------------------------------------------------
+function inRect(px,py, x,y,w,h){ return px>=x && py>=y && px<x+w && py<y+h; }
+
+// Bin rectangles on PLAY screen
+const BINS = [
+  {kind:'paper',   x: 30, y: 200, w:40, h:34},
+  {kind:'plastic', x: 90, y: 200, w:40, h:34},
+  {kind:'glass',   x:150, y: 200, w:40, h:34},
+  {kind:'trash',   x:410, y: 200, w:40, h:34},
+];
+
+// ---------- Scenes ------------------------------------------------------
+function sceneSplash(dt){
+  drawSkyAndGround();
+  // big truck cruising
+  STATE.wheelPhase += dt*8;
+  drawTruck(W/2-40, H-60, 1, 0.4, STATE.wheelPhase);
+  bigText('Recycle Truck', W/2, 60, C.text, 26, 'center');
+  bigText('Tiny Helper',   W/2, 92, C.truckShade, 14, 'center');
+  STATE.splashT += dt;
+  if((STATE.splashT*2|0)%2===0) bigText('TAP TO START', W/2, 200, C.text, 14, 'center');
+  text('A game for little recyclers', W/2, 230, C.text, 9, 'center');
+
+  if(input.justDown){ sfx.tap(); STATE.scene = 'PICK_TRUCK'; }
+}
+
+function scenePickTruck(dt){
+  drawSkyAndGround();
+  bigText('Pick Your Truck', W/2, 30, C.text, 18, 'center');
+  text('Tap a truck to choose', W/2, 56, C.text, 9, 'center');
+  STATE.wheelPhase += dt*4;
+
+  const slots = [ {x:60}, {x:200}, {x:340} ];
+  for(let i=0;i<3;i++){
+    const sx = slots[i].x;
+    // pedestal
+    px(sx-10, H-90, 100, 4, '#ffffff66');
+    drawTruck(sx, H-92, i, 0.2, STATE.wheelPhase);
+    if(STATE.truck===i){
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+      ctx.strokeRect(sx-12, H-130, 100, 50);
+    }
+    // hit
+    if(input.justDown && inRect(input.x,input.y, sx-12, H-130, 100, 50)){
+      STATE.truck = i; sfx.tap();
+    }
+  }
+
+  // OK button
+  drawButton(W/2-40, H-30, 80, 22, 'OK ›', () => {
+    sfx.tap(); STATE.scene = 'PICK_WORKER';
+  });
+}
+
+function scenePickWorker(dt){
+  drawSkyAndGround();
+  bigText('Pick Your Helper', W/2, 30, C.text, 18, 'center');
+  text('Tap to choose, then OK', W/2, 56, C.text, 9, 'center');
+
+  // 6 combos: 3 skins × 2 shirts shown as palette
+  const combos = [
+    {skin:0,shirt:0},{skin:0,shirt:1},{skin:0,shirt:2},
+    {skin:1,shirt:1},{skin:1,shirt:3},{skin:2,shirt:0},
+  ];
+  combos.forEach((c,i)=>{
+    const col = i%3, row = (i/3)|0;
+    const x = 80 + col*140, y = 110 + row*70;
+    // platform
+    px(x-8, y+4, 32, 3, '#ffffff66');
+    drawWorker(x, y, c);
+    if(STATE.worker.skin===c.skin && STATE.worker.shirt===c.shirt){
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+      ctx.strokeRect(x-10, y-30, 36, 40);
+    }
+    if(input.justDown && inRect(input.x,input.y, x-10,y-30,36,40)){
+      STATE.worker = c; sfx.tap();
+    }
+  });
+
+  drawButton(W/2-40, H-30, 80, 22, 'PLAY ›', () => {
+    sfx.tap(); startGame();
+  });
+}
+
+function scenePlay(dt){
+  drawSkyAndGround();
+  STATE.wheelPhase += dt*2;
+
+  // Title strip
+  px(0,0,W,18,'#1b244088');
+  text(`Item ${Math.min(STATE.itemsDone+1, STATE.itemsTotal)}/${STATE.itemsTotal}`, 8, 5, '#fff', 9);
+  text(`Correct: ${STATE.correct}`, W-8, 5, '#fff', 9, 'right');
+
+  // truck parked at left, worker beside it
+  drawTruck(STATE.truckX, H-60, STATE.truck, STATE.itemsDone/STATE.itemsTotal, STATE.wheelPhase);
+  drawWorker(STATE.truckX+72, H-50, STATE.worker);
+
+  // bins
+  for(const b of BINS){
+    const hi = STATE.drag && inRect(input.x, input.y, b.x-3,b.y-6,b.w+6,b.h+12);
+    drawBin(b.x, b.y, b.kind, !!hi);
+  }
+
+  // current item (draggable), drawn 2x scale for chunky toddler-friendly tap
+  const it = STATE.current;
+  if(it){
+    if(STATE.drag){ it.x = input.x - STATE.drag.ox; it.y = input.y - STATE.drag.oy; }
+    // draw at 2x via temp scaling: just draw twice the size by scaling ctx
+    ctx.save();
+    ctx.translate(it.x|0, it.y|0);
+    ctx.scale(2,2);
+    it.def.draw(-7,-7);
+    ctx.restore();
+    // label under item
+    text(it.def.key, it.x|0, (it.y+18)|0, C.text, 9, 'center');
+
+    // input handling
+    const grabR = 22;
+    if(input.justDown && Math.hypot(input.x-it.x, input.y-it.y) < grabR){
+      STATE.drag = { ox: input.x - it.x, oy: input.y - it.y };
+    }
+    if(input.justUp && STATE.drag){
+      STATE.drag = null;
+      // check bin drop
+      let dropped = null;
+      for(const b of BINS){
+        if(inRect(it.x, it.y, b.x-3,b.y-6,b.w+6,b.h+12)){ dropped = b; break; }
+      }
+      if(dropped){
+        const correct = (dropped.kind === it.def.cat);
+        if(correct){
+          STATE.correct++;
+          STATE.feedback = {text:'Great!', color:C.good, t:0.9};
+          sfx.good();
+        } else {
+          STATE.feedback = {text:'Try again!', color:C.warn, t:0.9};
+          sfx.bad();
+        }
+        STATE.itemsDone++;
+        if(STATE.itemsDone >= STATE.itemsTotal){
+          // start drive sequence after feedback
+          setTimeout(()=>{ STATE.scene='DRIVE'; STATE.driveT=0; sfx.drive(); }, 600);
+        } else {
+          STATE.current = newItem();
+        }
+      } else {
+        // snap home
+        it.x = it.homeX; it.y = it.homeY;
+      }
+    }
+  }
+
+  // feedback toast
+  if(STATE.feedback){
+    STATE.feedback.t -= dt;
+    if(STATE.feedback.t<=0) STATE.feedback=null;
+    else {
+      const a = Math.min(1, STATE.feedback.t*1.5);
+      ctx.globalAlpha = a;
+      bigText(STATE.feedback.text, W/2, 90, STATE.feedback.color, 18, 'center');
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function sceneDrive(dt){
+  drawSkyAndGround();
+  STATE.driveT += dt;
+  STATE.wheelPhase += dt*16;
+  // truck accelerates to the right
+  STATE.truckX += dt * (60 + STATE.driveT*60);
+  drawTruck(STATE.truckX, H-60, STATE.truck, 1.0, STATE.wheelPhase);
+
+  // recycling centre on the right
+  drawRecyclingCentre(W-90, H-90);
+
+  bigText('Off to the recycling centre!', W/2, 60, C.text, 14, 'center');
+
+  if(STATE.truckX > W - 100){
+    setTimeout(()=>{ STATE.scene='RESULT'; sfx.cheer(); }, 400);
+    STATE.driveT = -999; // stop further triggers
+  }
+}
+
+function drawRecyclingCentre(x,y){
+  // building
+  px(x, y-50, 80, 50, '#c8c8d0');
+  px(x, y-50, 80, 4,  '#9aa0a8');
+  px(x+10, y-30, 14, 18, '#5a5a6a'); // door
+  px(x+30, y-40, 12, 10, C.glass);
+  px(x+50, y-40, 12, 10, C.glass);
+  // logo
+  px(x+34, y-58, 12, 10, C.ground2);
+  text('R', x+40, y-57, '#fff', 9, 'center');
+  // chimney puff
+  px(x+60, y-62, 6, 12, '#9aa0a8');
+  for(let i=0;i<3;i++){
+    const cy = (y-72 - i*8 - (Date.now()/200 + i*4)%8)|0;
+    circle(x+63, cy, 3+i, '#ffffffcc');
+  }
+}
+
+function sceneResult(dt){
+  drawSkyAndGround();
+  STATE.wheelPhase += dt*2;
+  drawTruck(W-130, H-60, STATE.truck, 0, STATE.wheelPhase); // emptied
+  drawWorker(W-180, H-50, STATE.worker);
+
+  // banner
+  px(40, 40, W-80, 140, '#ffffffee');
+  ctx.strokeStyle = C.text; ctx.lineWidth = 2;
+  ctx.strokeRect(40,40,W-80,140);
+
+  bigText('All Done!', W/2, 56, C.text, 22, 'center');
+  bigText(`You sorted ${STATE.correct} of ${STATE.itemsTotal} correctly`,
+          W/2, 96, C.truckShade, 12, 'center');
+
+  // stars
+  const stars = STATE.correct>=9?3 : STATE.correct>=6?2 : STATE.correct>=3?1 : 0;
+  for(let i=0;i<3;i++){
+    const sx = W/2 - 36 + i*36, sy = 130;
+    drawStar(sx, sy, i<stars ? '#ffd84a' : '#cfcfd8');
+  }
+
+  drawButton(W/2-50, H-36, 100, 24, 'PLAY AGAIN', ()=>{
+    sfx.tap(); STATE.scene='SPLASH'; STATE.splashT=0;
+  });
+}
+
+function drawStar(cx,cy,col){
+  // chunky 5-point star in pixels
+  px(cx-1, cy-8, 3, 3, col);
+  px(cx-8, cy-2, 17, 3, col);
+  px(cx-6, cy+1, 13, 3, col);
+  px(cx-5, cy+4, 4, 3, col);
+  px(cx+2, cy+4, 4, 3, col);
+  px(cx-7, cy+7, 3, 3, col);
+  px(cx+5, cy+7, 3, 3, col);
+}
+
+// ---------- Button helper -----------------------------------------------
+function drawButton(x,y,w,h,label,onTap){
+  const hover = inRect(input.x,input.y, x,y,w,h);
+  px(x, y, w, h, hover ? C.truckShade : C.text);
+  px(x+1, y+1, w-2, 2, '#ffffff77');
+  text(label, x+w/2, y+h/2-4, '#fff', 11, 'center');
+  if(input.justDown && hover) onTap();
+}
+
+// ---------- Main loop ---------------------------------------------------
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(0.05, (now - last)/1000);
+  last = now;
+
+  ctx.clearRect(0,0,W,H);
+  switch(STATE.scene){
+    case 'SPLASH':       sceneSplash(dt); break;
+    case 'PICK_TRUCK':   scenePickTruck(dt); break;
+    case 'PICK_WORKER':  scenePickWorker(dt); break;
+    case 'PLAY':         scenePlay(dt); break;
+    case 'DRIVE':        sceneDrive(dt); break;
+    case 'RESULT':       sceneResult(dt); break;
+  }
+
+  // reset edge flags AFTER all scene logic consumed them
+  input.justDown = false;
+  input.justUp = false;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+})();
+
+</script>
+</body>
+</html>
