@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Chinese Stroke Quest! 🏮</title>
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #FFF9E6 0%, #D4FC79 100%);
+      --card-bg: rgba(255, 255, 255, 0.9);
+      --primary-color: #ff4757;
+      --secondary-color: #2ed573;
+      --dark-color: #2f3542;
+      --bubble-color: #eccc68;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: var(--bg-gradient);
+      font-family: 'Comic Sans MS', 'Chalkboard SE', 'PingFang SC', sans-serif;
+      color: var(--dark-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Screen Management */
+    .screen {
+      display: none;
+      width: 100%;
+      height: 100%;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* Header Styles */
+    header {
+      width: 100%;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      z-index: 10;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      color: #ff4757;
+      text-shadow: 2px 2px 0px white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      border: none;
+      padding: 10px 20px;
+      border-radius: 22px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+      transition: transform 0.1s ease, background-color 0.2s;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+    }
+
+    .btn-toggle {
+      background-color: white;
+      color: var(--dark-color);
+      border: 2px solid #e17055;
+    }
+
+    .btn-toggle.active {
+      background-color: #e17055;
+      color: white;
+    }
+
+    .btn-primary {
+      background-color: var(--secondary-color);
+      color: white;
+    }
+
+    .btn-secondary {
+      background-color: #70a1ff;
+      color: white;
+    }
+
+    .btn-menu {
+      background-color: #ff9f43;
+      color: white;
+    }
+
+    /* Menu Screen Layout */
+    .menu-content {
+      width: 100%;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .menu-title {
+      font-size: 2.2rem;
+      color: #ff4757;
+      text-align: center;
+      margin: 10px 0 20px 0;
+      text-shadow: 2px 2px 0px white;
+    }
+
+    .menu-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 6px;
+      border-radius: 30px;
+      margin-bottom: 25px;
+      box-shadow: 0 6px 12px rgba(0,0,0,0.05);
+      border: 2px solid white;
+    }
+
+    .tab-btn {
+      border: none;
+      background: none;
+      padding: 12px 30px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      border-radius: 25px;
+      cursor: pointer;
+      color: #747d8c;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .tab-btn.active {
+      background-color: #ff4757;
+      color: white;
+      box-shadow: 0 4px 10px rgba(255, 71, 87, 0.3);
+    }
+
+    .letters-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 960px;
+      padding: 10px;
+    }
+
+    .letter-bubble {
+      background: white;
+      border: 4px solid white;
+      border-radius: 28px;
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .letter-bubble:active {
+      transform: scale(0.92);
+    }
+
+    .bubble-char {
+      font-size: 2.6rem;
+      font-weight: bold;
+      color: var(--dark-color);
+      margin-bottom: 4px;
+    }
+
+    .bubble-emoji {
+      font-size: 1.8rem;
+    }
+
+    /* Game Screen Layout */
+    .level-container {
+      width: 92%;
+      max-width: 900px;
+      margin-top: 12px;
+      text-align: center;
+      background: var(--card-bg);
+      padding: 12px 24px;
+      border-radius: 25px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+      border: 3px solid white;
+    }
+
+    .level-title {
+      font-size: 1.7rem;
+      margin: 0 0 4px 0;
+      color: #ff4757;
+    }
+
+    .level-desc {
+      font-size: 1.1rem;
+      margin: 0;
+      color: #57606f;
+    }
+
+    .game-area {
+      position: relative;
+      width: 92%;
+      max-width: 900px;
+      flex-grow: 1;
+      margin: 15px 0;
+      background: white;
+      border-radius: 30px;
+      box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+      border: 6px solid #ffbc00;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #gameCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    /* Overlays and Popups */
+    .overlay-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 24px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+      z-index: 5;
+    }
+
+    .overlay-container.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .win-text {
+      font-size: 2.6rem;
+      color: #ff4757;
+      text-shadow: 3px 3px 0 white;
+      margin-bottom: 24px;
+      animation: bounce 0.8s infinite alternate;
+    }
+
+    .win-emoji {
+      font-size: 5.5rem;
+      margin-bottom: 20px;
+    }
+
+    .overlay-buttons {
+      display: flex;
+      gap: 20px;
+    }
+
+    .big-btn {
+      font-size: 1.6rem;
+      padding: 16px 36px;
+      border: 4px solid white;
+      border-radius: 40px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+      transition: transform 0.1s;
+      font-family: inherit;
+    }
+
+    .big-btn:active {
+      transform: scale(0.95);
+    }
+
+    .big-btn-next {
+      background-color: var(--secondary-color);
+      color: white;
+    }
+
+    .big-btn-menu {
+      background-color: #ff9f43;
+      color: white;
+    }
+
+    @keyframes bounce {
+      from { transform: translateY(0); }
+      to { transform: translateY(-12px); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================= MENU SCREEN ================= -->
+  <div id="menuScreen" class="screen active">
+    <header>
+      <h1>🏮 Chinese Tracing Quest!</h1>
+      <div class="controls">
+        <button id="menuSoundToggle" class="btn btn-toggle active">🔊 Sounds</button>
+      </div>
+    </header>
+
+    <div class="menu-content">
+      <div class="menu-title">选个汉字来练习写字吧！✨</div>
+
+      <div class="menu-tabs">
+        <button id="tabBasic" class="tab-btn active">常用汉字 (Basic)</button>
+        <button id="tabNumbers" class="tab-btn">汉字数字 (Numbers)</button>
+      </div>
+
+      <div id="lettersGrid" class="letters-grid"></div>
+    </div>
+  </div>
+
+  <!-- ================= GAME SCREEN ================= -->
+  <div id="gameScreen" class="screen">
+    <header>
+      <button id="backToMenuBtn" class="btn btn-menu">🏠 主菜单</button>
+      <h1>✍️ 汉字笔画练习</h1>
+      <div class="controls">
+        <button id="stylusToggle" class="btn btn-toggle active">✍️ Pencil Only</button>
+        <button id="gameSoundToggle" class="btn btn-toggle active">🔊 Sounds</button>
+        <button id="clearBtn" class="btn btn-secondary">🧹 清除重新画</button>
+      </div>
+    </header>
+
+    <div class="level-container">
+      <h2 id="levelTitle" class="level-title">A is for Ant</h2>
+      <p id="levelDesc" class="level-desc">Trace the path!</p>
+    </div>
+
+    <div class="game-area" id="gameArea">
+      <canvas id="gameCanvas"></canvas>
+
+      <!-- Level Win Popup Overlay -->
+      <div class="overlay-container" id="successOverlay">
+        <div class="win-emoji" id="winEmoji">🎉</div>
+        <div class="win-text" id="winText">写得太棒了！</div>
+        <div class="overlay-buttons">
+          <button id="overlayMenuBtn" class="big-btn big-btn-menu">🏠 主菜单</button>
+          <button id="nextLevelBtn" class="big-btn big-btn-next">下一个字 ➜</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Colorful pastel colors for bubbles in menu grid
+    const bubbleColors = [
+      "#ffeaa7", "#ffb8b8", "#c7ecee", "#dff9fb", "#f8a5c2", "#f7d794",
+      "#eccc68", "#ff7f50", "#ff6b81", "#70a1ff", "#7bed9f", "#eccc68",
+      "#ffeaa7", "#ffb8b8", "#c7ecee", "#dff9fb", "#f8a5c2", "#f7d794"
+    ];
+
+    // Alphabet Database: Tracing strokes, animated emojis, and storytelling prompts
+    // All coordinates represent grid points from 0 to 100 within a centered layout container.
+    const letterDefinitions = {
+      // BASIC CHARACTERS
+      '大': {
+        strokes: [
+          [{x: 20, y: 40}, {x: 80, y: 40}], // 横
+          [{x: 50, y: 15}, {x: 45, y: 40}, {x: 20, y: 85}], // 撇
+          [{x: 48, y: 40}, {x: 80, y: 85}]  // 捺
+        ],
+        animal: "Panda 🐼",
+        goal: "Bamboo 🎋",
+        desc: "大 (Dà) - 帮助大熊猫张开手臂，伸展身体去够绿竹子吧！",
+        isNumber: false
+      },
+      '小': {
+        strokes: [
+          [{x: 50, y: 15}, {x: 50, y: 75}, {x: 42, y: 65}], // 竖钩
+          [{x: 28, y: 40}, {x: 18, y: 60}], // 撇
+          [{x: 72, y: 40}, {x: 82, y: 60}]  // 点
+        ],
+        animal: "Bird 🐦",
+        goal: "Water 💧",
+        desc: "小 (Xiǎo) - 帮助小鸟喝几滴晶莹透亮的小水滴吧！",
+        isNumber: false
+      },
+      '太': {
+        strokes: [
+          [{x: 20, y: 38}, {x: 80, y: 38}], // 横
+          [{x: 50, y: 15}, {x: 45, y: 38}, {x: 20, y: 83}], // 撇
+          [{x: 48, y: 38}, {x: 80, y: 83}], // 捺
+          [{x: 56, y: 65}, {x: 64, y: 75}]  // 点
+        ],
+        animal: "Sun ☀️",
+        goal: "Flower 🌻",
+        desc: "太 (Tài) - 帮助天上的红太阳散发光芒，温暖金色向日葵！",
+        isNumber: false
+      },
+      '不': {
+        strokes: [
+          [{x: 20, y: 25}, {x: 80, y: 25}], // 横
+          [{x: 50, y: 25}, {x: 40, y: 55}, {x: 20, y: 80}], // 撇
+          [{x: 50, y: 25}, {x: 50, y: 85}], // 竖
+          [{x: 62, y: 55}, {x: 78, y: 72}]  // 点
+        ],
+        animal: "Duck 🦆",
+        goal: "Storm ⛈️",
+        desc: "不 (Bù) - 帮助小鸭子摇摇头，我们不要走进雨云里！",
+        isNumber: false
+      },
+      '上': {
+        strokes: [
+          [{x: 50, y: 15}, {x: 50, y: 80}], // 竖
+          [{x: 50, y: 48}, {x: 75, y: 48}], // 横
+          [{x: 20, y: 80}, {x: 80, y: 80}]  // 横
+        ],
+        animal: "Monkey 🐒",
+        goal: "Banana 🍌",
+        desc: "上 (Shàng) - 帮助调皮的小猴子一步一步爬上高藤吃香蕉！",
+        isNumber: false
+      },
+      '下': {
+        strokes: [
+          [{x: 20, y: 20}, {x: 80, y: 20}], // 横
+          [{x: 50, y: 20}, {x: 50, y: 85}], // 竖
+          [{x: 60, y: 45}, {x: 75, y: 60}]  // 点
+        ],
+        animal: "Cloud 🌧️",
+        goal: "Sprout 🌱",
+        desc: "下 (Xià) - 帮助乌云落下一场快乐的雨，给泥土里的小豆芽浇水！",
+        isNumber: false
+      },
+      '口': {
+        strokes: [
+          [{x: 25, y: 25}, {x: 25, y: 75}], // 竖
+          [{x: 25, y: 25}, {x: 75, y: 25}, {x: 75, y: 75}], // 横折
+          [{x: 25, y: 75}, {x: 75, y: 75}]  // 横
+        ],
+        animal: "Chick 🐥",
+        goal: "Worm 🐛",
+        desc: "口 (Kǒu) - 帮助毛茸茸的小鸡张大嘴巴去吃大青虫！",
+        isNumber: false
+      },
+      '日': {
+        strokes: [
+          [{x: 30, y: 20}, {x: 30, y: 80}], // 竖
+          [{x: 30, y: 20}, {x: 70, y: 20}, {x: 70, y: 80}], // 横折
+          [{x: 30, y: 50}, {x: 70, y: 50}], // 横
+          [{x: 30, y: 80}, {x: 70, y: 80}]  // 横
+        ],
+        animal: "Sun ☀️",
+        goal: "Rooster 🐓",
+        desc: "日 (Rì) - 唤醒温暖的红日，帮助大公鸡在清晨喔喔啼！",
+        isNumber: false
+      },
+      '生': {
+        strokes: [
+          [{x: 45, y: 15}, {x: 30, y: 32}], // 撇
+          [{x: 30, y: 32}, {x: 70, y: 32}], // 横
+          [{x: 50, y: 15}, {x: 50, y: 85}], // 竖
+          [{x: 35, y: 58}, {x: 65, y: 58}], // 横
+          [{x: 20, y: 85}, {x: 80, y: 85}]  // 横
+        ],
+        animal: "Seed  🌱",
+        goal: "Sun ☀️",
+        desc: "生 (Shēng) - 帮助嫩绿的种子破土而出，茁壮生长迎朝阳！",
+        isNumber: false
+      },
+      '山': {
+        strokes: [
+          [{x: 50, y: 20}, {x: 50, y: 80}], // 竖
+          [{x: 25, y: 45}, {x: 25, y: 80}, {x: 75, y: 80}], // 竖折
+          [{x: 75, y: 45}, {x: 75, y: 80}]  // 竖
+        ],
+        animal: "Goat 🐐",
+        goal: "Grass 🍀",
+        desc: "山 (Shān) - 帮助白山羊跨过连绵的大山去草地吃青草！",
+        isNumber: false
+      },
+      '出': {
+        strokes: [
+          [{x: 30, y: 20}, {x: 30, y: 48}, {x: 50, y: 48}], // 上半左竖折
+          [{x: 70, y: 20}, {x: 70, y: 48}], // 上半右竖
+          [{x: 50, y: 15}, {x: 50, y: 85}], // 中间大竖
+          [{x: 20, y: 55}, {x: 20, y: 85}, {x: 50, y: 85}], // 下半左竖折
+          [{x: 80, y: 55}, {x: 80, y: 85}]  // 下半右竖
+        ],
+        animal: "Rabbit 🐰",
+        goal: "Carrot 🥕",
+        desc: "出 (Chū) - 帮助可爱的小兔子蹦蹦跳跳出树洞，拔大胡萝卜！",
+        isNumber: false
+      },
+      '头': {
+        strokes: [
+          [{x: 35, y: 20}, {x: 42, y: 28}], // 点
+          [{x: 60, y: 18}, {x: 68, y: 26}], // 点
+          [{x: 25, y: 48}, {x: 75, y: 48}], // 横
+          [{x: 50, y: 48}, {x: 38, y: 65}, {x: 20, y: 85}], // 撇
+          [{x: 50, y: 48}, {x: 80, y: 80}]  // 点（捺）
+        ],
+        animal: "Dog 🐶",
+        goal: "Meat 🍖",
+        desc: "头 (Tóu) - 帮助乖巧的小狗点点头，得到香喷喷的肉骨头！",
+        isNumber: false
+      },
+      '手': {
+        strokes: [
+          [{x: 65, y: 20}, {x: 35, y: 28}], // 撇
+          [{x: 30, y: 45}, {x: 70, y: 45}], // 横
+          [{x: 20, y: 62}, {x: 80, y: 62}], // 横
+          [{x: 50, y: 28}, {x: 50, y: 80}, {x: 40, y: 80}]  // 弯钩
+        ],
+        animal: "Chimp 🦧",
+        goal: "Banana 🍌",
+        desc: "手 (Shǒu) - 帮助活泼的小黑猩猩拍拍双手，领取大香蕉！",
+        isNumber: false
+      },
+      '耳': {
+        strokes: [
+          [{x: 25, y: 20}, {x: 75, y: 20}], // 横
+          [{x: 38, y: 20}, {x: 38, y: 80}], // 竖
+          [{x: 62, y: 20}, {x: 62, y: 85}], // 竖
+          [{x: 38, y: 40}, {x: 62, y: 40}], // 横
+          [{x: 38, y: 60}, {x: 62, y: 60}], // 横
+          [{x: 20, y: 80}, {x: 80, y: 80}]  // 横
+        ],
+        animal: "Elephant 🐘",
+        goal: "Music 🎵",
+        desc: "耳 (Ěr) - 帮助大耳朵象动动大耳朵，聆听欢快的乐曲！",
+        isNumber: false
+      },
+      '今': {
+        strokes: [
+          [{x: 50, y: 15}, {x: 20, y: 50}], // 撇
+          [{x: 50, y: 15}, {x: 80, y: 50}], // 捺
+          [{x: 42, y: 52}, {x: 48, y: 60}], // 点
+          [{x: 30, y: 72}, {x: 65, y: 72}, {x: 45, y: 92}] // 横折折撇
+        ],
+        animal: "Rocket 🚀",
+        goal: "Earth 🌍",
+        desc: "今 (Jīn) - 帮助宇宙飞船飞回今天，降落在美丽的地球上！",
+        isNumber: false
+      },
+      '天': {
+        strokes: [
+          [{x: 30, y: 22}, {x: 70, y: 22}], // 横
+          [{x: 20, y: 45}, {x: 80, y: 45}], // 横
+          [{x: 50, y: 22}, {x: 45, y: 45}, {x: 20, y: 85}], // 撇
+          [{x: 48, y: 45}, {x: 80, y: 85}]  // 捺
+        ],
+        animal: "Balloon 🎈",
+        goal: "Cloud ☁️",
+        desc: "天 (Tiān) - 帮助彩色的热气球飞上蓝天，和白云做朋友！",
+        isNumber: false
+      },
+      '高': {
+        strokes: [
+          [{x: 50, y: 10}, {x: 50, y: 18}], // 点
+          [{x: 25, y: 24}, {x: 75, y: 24}], // 横
+          [{x: 38, y: 24}, {x: 38, y: 36}], // 竖
+          [{x: 38, y: 24}, {x: 62, y: 24}, {x: 62, y: 36}], // 横折
+          [{x: 38, y: 36}, {x: 62, y: 36}], // 横
+          [{x: 30, y: 44}, {x: 30, y: 85}], // 竖
+          [{x: 30, y: 44}, {x: 70, y: 44}, {x: 70, y: 85}], // 横折钩
+          [{x: 30, y: 58}, {x: 70, y: 58}], // 横
+          [{x: 40, y: 66}, {x: 40, y: 78}], // 竖
+          [{x: 40, y: 66}, {x: 60, y: 66}, {x: 60, y: 78}], // 横折
+          [{x: 40, y: 78}, {x: 60, y: 78}]  // 横
+        ],
+        animal: "Giraffe 🦒",
+        goal: "Tree 🌿",
+        desc: "高 (Gāo) - 帮助长颈鹿伸长脖子，去够到高高的树叶！",
+        isNumber: false
+      },
+      '发': {
+        strokes: [
+          [{x: 45, y: 15}, {x: 25, y: 35}, {x: 55, y: 35}], // 撇折
+          [{x: 55, y: 15}, {x: 30, y: 58}, {x: 18, y: 85}], // 撇
+          [{x: 30, y: 45}, {x: 70, y: 45}, {x: 65, y: 70}, {x: 82, y: 80}, {x: 82, y: 70}], // 横折弯钩
+          [{x: 55, y: 32}, {x: 62, y: 40}], // 点
+          [{x: 45, y: 50}, {x: 78, y: 85}]  // 捺
+        ],
+        animal: "Wand 🪄",
+        goal: "Flower 💐",
+        desc: "发 (Fā) - 挥动魔法棒发力，变出一束五彩斑斓的鲜花吧！",
+        isNumber: false
+      },
+      '面': {
+        strokes: [
+          [{x: 25, y: 15}, {x: 75, y: 15}], // 横
+          [{x: 50, y: 15}, {x: 38, y: 32}], // 撇
+          [{x: 28, y: 32}, {x: 28, y: 85}], // 竖
+          [{x: 28, y: 32}, {x: 72, y: 32}, {x: 72, y: 85}], // 横折
+          [{x: 28, y: 48}, {x: 72, y: 48}], // 横
+          [{x: 28, y: 66}, {x: 72, y: 66}], // 横
+          [{x: 42, y: 48}, {x: 42, y: 66}], // 竖
+          [{x: 58, y: 48}, {x: 58, y: 66}], // 竖
+          [{x: 20, y: 85}, {x: 80, y: 85}]  // 横
+        ],
+        animal: "Chef 👨‍🍳",
+        goal: "Noodle 🍜",
+        desc: "面 (Miàn) - 帮助厨师叔叔揉好面团，拉出一碗热气腾腾的面条！",
+        isNumber: false
+      },
+      '气': {
+        strokes: [
+          [{x: 65, y: 15}, {x: 35, y: 25}], // 撇
+          [{x: 30, y: 40}, {x: 70, y: 40}], // 横
+          [{x: 25, y: 55}, {x: 65, y: 55}], // 横
+          [{x: 25, y: 70}, {x: 75, y: 70}, {x: 68, y: 85}, {x: 85, y: 92}, {x: 85, y: 80}] // 横折弯钩
+        ],
+        animal: "Balloon 🎈",
+        goal: "Wind 🌬️",
+        desc: "气 (Qì) - 帮助气球吹起一阵风，让它随风飘荡高飞！",
+        isNumber: false
+      },
+
+      // NUMBER CHARACTERS
+      '一': {
+        strokes: [
+          [{x: 20, y: 50}, {x: 80, y: 50}]
+        ],
+        animal: "Penguin 🐧",
+        goal: "Fish 🐟",
+        desc: "一 (Yī) - 帮助孤独的小企鹅游过去吃一条小鱼！",
+        isNumber: true
+      },
+      '二': {
+        strokes: [
+          [{x: 30, y: 35}, {x: 70, y: 35}],
+          [{x: 20, y: 65}, {x: 80, y: 65}]
+        ],
+        animal: "Ducks 🦆",
+        goal: "Water 🦆",
+        desc: "二 (Èr) - 两只小鸭子成双成对游，游到湖中心碰面！",
+        isNumber: true
+      },
+      '三': {
+        strokes: [
+          [{x: 30, y: 25}, {x: 70, y: 25}],
+          [{x: 35, y: 50}, {x: 65, y: 50}],
+          [{x: 20, y: 75}, {x: 80, y: 75}]
+        ],
+        animal: "Pigs 🐷",
+        goal: "House 🏠",
+        desc: "三 (Sān) - 帮助三只快乐的小猪，盖一座坚固的砖头小屋！",
+        isNumber: true
+      },
+      '四': {
+        strokes: [
+          [{x: 25, y: 25}, {x: 25, y: 80}], // 竖
+          [{x: 25, y: 25}, {x: 75, y: 25}, {x: 75, y: 80}], // 横折
+          [{x: 40, y: 40}, {x: 35, y: 65}], // 撇
+          [{x: 55, y: 40}, {x: 55, y: 60}, {x: 65, y: 60}], // 竖折弯
+          [{x: 25, y: 80}, {x: 75, y: 80}]  // 横
+        ],
+        animal: "Dog 🐶",
+        goal: "Chair 🪑",
+        desc: "四 (Sì) - 小狗找到了四只稳固的桌椅腿，开心地跑了过去！",
+        isNumber: true
+      },
+      '五': {
+        strokes: [
+          [{x: 25, y: 20}, {x: 75, y: 20}], // 横
+          [{x: 48, y: 20}, {x: 40, y: 55}], // 竖
+          [{x: 40, y: 55}, {x: 70, y: 55}, {x: 70, y: 80}], // 横折
+          [{x: 20, y: 80}, {x: 80, y: 80}]  // 横
+        ],
+        animal: "Star 🌟",
+        goal: "Shell 🐚",
+        desc: "五 (Wǔ) - 帮助五角海星摆动它的五个手臂，去沙滩捡海螺！",
+        isNumber: true
+      },
+      '六': {
+        strokes: [
+          [{x: 50, y: 15}, {x: 50, y: 28}], // 点
+          [{x: 20, y: 45}, {x: 80, y: 45}], // 横
+          [{x: 38, y: 55}, {x: 25, y: 78}], // 撇
+          [{x: 62, y: 55}, {x: 75, y: 78}]  // 点
+        ],
+        animal: "Ladybug 🐞",
+        goal: "Leaf 🍃",
+        desc: "六 (Liù) - 帮红色瓢虫数一数背上的六个黑点点吧！",
+        isNumber: true
+      },
+      '七': {
+        strokes: [
+          [{x: 25, y: 50}, {x: 75, y: 42}], // 横
+          [{x: 48, y: 20}, {x: 48, y: 70}, {x: 68, y: 70}, {x: 68, y: 58}]  // 竖弯钩
+        ],
+        animal: "Dragon 🐲",
+        goal: "Rainbow 🌈",
+        desc: "七 (Qī) - 帮助七彩神龙飞上天，在云中画出一道七色彩虹！",
+        isNumber: true
+      },
+      '八': {
+        strokes: [
+          [{x: 42, y: 35}, {x: 20, y: 75}], // 撇
+          [{x: 58, y: 35}, {x: 80, y: 75}]  // 捺
+        ],
+        animal: "Octopus 🐙",
+        goal: "Crab 🦀",
+        desc: "八 (Bā) - 帮助大章鱼挥舞八条长长的小触手，向螃蟹打招呼！",
+        isNumber: true
+      },
+      '九': {
+        strokes: [
+          [{x: 55, y: 20}, {x: 45, y: 45}, {x: 25, y: 80}], // 撇
+          [{x: 25, y: 35}, {x: 70, y: 35}, {x: 70, y: 65}, {x: 85, y: 75}, {x: 85, y: 60}] // 横折弯钩
+        ],
+        animal: "Fox 🦊",
+        goal: "Scroll 📜",
+        desc: "九 (Jiǔ) - 帮助神秘的九尾仙狐越过山丘去找到古老卷轴！",
+        isNumber: true
+      },
+      '十': {
+        strokes: [
+          [{x: 20, y: 50}, {x: 80, y: 50}], // 横
+          [{x: 50, y: 20}, {x: 50, y: 80}]  // 竖
+        ],
+        animal: "Miner 🤠",
+        goal: "Star ⭐",
+        desc: "十 (Shí) - 帮助西部淘金小矿工，在山洞深处挖到十颗亮闪闪的星星！",
+        isNumber: true
+      }
+    };
+
+    // Global state
+    let activeLetter = '大';
+    let numbersView = false;
+    let pencilOnlyMode = true;
+    let soundsEnabled = true;
+    let isDrawing = false;
+    let drawnSegments = []; // Array of arrays of {x,y} drawn coordinates
+    let activeStrokeIndex = null;
+    let strokeProgress = []; // Trace completion indices for current activeLetter
+    let levelCompleted = false;
+
+    // Dimensions
+    const VIRTUAL_WIDTH = 900;
+    const VIRTUAL_HEIGHT = 600;
+
+    // Particles array for sparkles
+    let particles = [];
+
+    // Synthesizer Audio
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playTick() {
+      if (!soundsEnabled) return;
+      initAudio();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(550, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(850, audioCtx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.08);
+    }
+
+    function playStrokeSuccess() {
+      if (!soundsEnabled) return;
+      initAudio();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const notes = [329.63, 392.00, 523.25, 659.25]; // E G C E notes
+      const duration = 0.12;
+      notes.forEach((freq, index) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime + index * 0.08);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime + index * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + index * 0.08 + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(audioCtx.currentTime + index * 0.08);
+        osc.stop(audioCtx.currentTime + index * 0.08 + duration);
+      });
+    }
+
+    function playLevelSuccess() {
+      if (!soundsEnabled) return;
+      initAudio();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const chords = [
+        { freq: [261.63, 329.63, 392.00], time: 0 },
+        { freq: [349.23, 440.00, 523.25], time: 0.25 },
+        { freq: [392.00, 493.88, 587.33], time: 0.5 },
+        { freq: [523.25, 659.25, 783.99, 1046.50], time: 0.75 }
+      ];
+      chords.forEach((chord) => {
+        chord.freq.forEach((freq) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + chord.time);
+          gain.gain.setValueAtTime(0.08, audioCtx.currentTime + chord.time);
+          gain.gain.exponentialRampToValueAtTime(0.001, chord.time + 0.5);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + chord.time);
+          osc.stop(audioCtx.currentTime + chord.time + 0.6);
+        });
+      });
+    }
+
+    // Dynamic scale helper matching standard coordinates into centered sandbox area
+    // Maps standard (0 to 100) range into square width/height inside virtual canvas
+    function mapPoint(p) {
+      return {
+        x: 230 + (p.x / 100) * 440,
+        y: 80 + (p.y / 100) * 440
+      };
+    }
+
+    // DOM Setup
+    const menuScreen = document.getElementById('menuScreen');
+    const gameScreen = document.getElementById('gameScreen');
+    const lettersGrid = document.getElementById('lettersGrid');
+
+    // Tab toggles
+    const tabBasic = document.getElementById('tabBasic');
+    const tabNumbers = document.getElementById('tabNumbers');
+
+    // Build the grid selectors for letter choice
+    function renderLettersMenu() {
+      lettersGrid.innerHTML = '';
+
+      const charKeys = Object.keys(letterDefinitions).filter(char => {
+        return letterDefinitions[char].isNumber === numbersView;
+      });
+
+      charKeys.forEach((char, idx) => {
+        const item = letterDefinitions[char];
+        const bubble = document.createElement('div');
+        bubble.className = 'letter-bubble';
+        bubble.style.backgroundColor = bubbleColors[idx % bubbleColors.length];
+
+        const charSpan = document.createElement('span');
+        charSpan.className = 'bubble-char';
+        charSpan.textContent = char;
+
+        const emojiSpan = document.createElement('span');
+        emojiSpan.className = 'bubble-emoji';
+        emojiSpan.textContent = item.animal.split(' ').pop(); // Select just emoji
+
+        bubble.appendChild(charSpan);
+        bubble.appendChild(emojiSpan);
+
+        bubble.addEventListener('click', () => {
+          initAudio();
+          startGameForLetter(char);
+        });
+
+        lettersGrid.appendChild(bubble);
+      });
+    }
+
+    // Toggle menu displays
+    tabBasic.addEventListener('click', () => {
+      numbersView = false;
+      tabBasic.classList.add('active');
+      tabNumbers.classList.remove('active');
+      renderLettersMenu();
+    });
+
+    tabNumbers.addEventListener('click', () => {
+      numbersView = true;
+      tabNumbers.classList.add('active');
+      tabBasic.classList.remove('active');
+      renderLettersMenu();
+    });
+
+    // Load Letter Tracing Scene
+    function startGameForLetter(char) {
+      activeLetter = char;
+      menuScreen.classList.remove('active');
+      gameScreen.classList.add('active');
+
+      resizeCanvas();
+      loadLevelState();
+    }
+
+    // Go back to letter lists
+    function exitToMenu() {
+      gameScreen.classList.remove('active');
+      menuScreen.classList.add('active');
+      renderLettersMenu();
+    }
+
+    document.getElementById('backToMenuBtn').addEventListener('click', exitToMenu);
+    document.getElementById('overlayMenuBtn').addEventListener('click', exitToMenu);
+
+    // Canvas Setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gameArea = document.getElementById('gameArea');
+
+    function resizeCanvas() {
+      canvas.width = gameArea.clientWidth;
+      canvas.height = gameArea.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // Get input coordinate inside 900x600 virtual container
+    function getVirtualCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+      const x = (clientX - rect.left) * (VIRTUAL_WIDTH / rect.width);
+      const y = (clientY - rect.top) * (VIRTUAL_HEIGHT / rect.height);
+      return { x, y };
+    }
+
+    function loadLevelState() {
+      levelCompleted = false;
+      isDrawing = false;
+      drawnSegments = [];
+      activeStrokeIndex = null;
+      particles = [];
+
+      const lvl = letterDefinitions[activeLetter];
+      document.getElementById('levelTitle').textContent = `汉字 “ ${activeLetter} ” 笔画描红`;
+      document.getElementById('levelDesc').textContent = lvl.desc;
+
+      // Reset node progress trackers
+      strokeProgress = lvl.strokes.map(() => -1);
+
+      document.getElementById('successOverlay').classList.remove('show');
+      draw();
+    }
+
+    // Sparkle generator
+    function spawnStars(x, y, count = 5) {
+      for(let i = 0; i < count; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          size: Math.random() * 8 + 4,
+          color: `hsl(${Math.random() * 360}, 100%, 70%)`,
+          alpha: 1,
+          decay: Math.random() * 0.02 + 0.01
+        });
+      }
+    }
+
+    // Draw Mechanics Loop
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      const scaleX = canvas.width / VIRTUAL_WIDTH;
+      const scaleY = canvas.height / VIRTUAL_HEIGHT;
+      ctx.scale(scaleX, scaleY);
+
+      // Draw background grid lines (米字格 Chinese calligraphy grid)
+      ctx.strokeStyle = "rgba(255, 71, 87, 0.15)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+
+      // Calligraphy box borders
+      ctx.beginPath();
+      ctx.moveTo(230, 80);
+      ctx.lineTo(670, 80);
+      ctx.lineTo(670, 520);
+      ctx.lineTo(230, 520);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Horizontal mid-line
+      ctx.beginPath();
+      ctx.moveTo(230, 300);
+      ctx.lineTo(670, 300);
+      ctx.stroke();
+
+      // Vertical mid-line
+      ctx.beginPath();
+      ctx.moveTo(450, 80);
+      ctx.lineTo(450, 520);
+      ctx.stroke();
+
+      // Diagonals
+      ctx.beginPath();
+      ctx.moveTo(230, 80);
+      ctx.lineTo(670, 520);
+      ctx.moveTo(670, 80);
+      ctx.lineTo(230, 520);
+      ctx.stroke();
+
+      ctx.setLineDash([]); // Reset dashed lines
+
+      const lvl = letterDefinitions[activeLetter];
+
+      // 1. Render all trace tracks
+      lvl.strokes.forEach((stroke, strokeIdx) => {
+        const progressIdx = strokeProgress[strokeIdx];
+        const isFinished = progressIdx === stroke.length - 1;
+
+        // Base background guide path
+        ctx.beginPath();
+        ctx.strokeStyle = isFinished ? 'rgba(46, 213, 115, 0.25)' : 'rgba(230, 234, 240, 0.9)';
+        ctx.lineWidth = 32;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        stroke.forEach((pRaw, idx) => {
+          const p = mapPoint(pRaw);
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+
+        // Inner dashed guides (looks like tiny roads)
+        ctx.beginPath();
+        ctx.strokeStyle = isFinished ? '#2ed573' : '#a4b0be';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 10]);
+        stroke.forEach((pRaw, idx) => {
+          const p = mapPoint(pRaw);
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset dashed formatting
+
+        // Draw start helpers (arrow direction markers)
+        if (!isFinished && stroke.length > 1) {
+          const startPt = mapPoint(stroke[0]);
+          const nextPt = mapPoint(stroke[1]);
+          const angle = Math.atan2(nextPt.y - startPt.y, nextPt.x - startPt.x);
+
+          ctx.save();
+          ctx.translate(startPt.x, startPt.y);
+          ctx.rotate(angle);
+          ctx.fillStyle = '#ff6b81';
+          ctx.beginPath();
+          ctx.moveTo(35, 0);
+          ctx.lineTo(20, -10);
+          ctx.lineTo(20, 10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 2. Render checkpoints / Target points
+        stroke.forEach((pRaw, pIdx) => {
+          const p = mapPoint(pRaw);
+          const isCompleted = pIdx <= progressIdx;
+          const isCurrentTarget = pIdx === progressIdx + 1 && !isFinished;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, isCurrentTarget ? 16 : 10, 0, Math.PI * 2);
+
+          if (isCompleted) {
+            ctx.fillStyle = '#2ed573';
+          } else if (isCurrentTarget) {
+            const pulse = Math.sin(Date.now() / 150) * 3;
+            ctx.fillStyle = '#ffbc00';
+            ctx.arc(p.x, p.y, 16 + pulse, 0, Math.PI * 2);
+          } else {
+            ctx.fillStyle = '#ced6e0';
+          }
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'white';
+          ctx.stroke();
+        });
+
+        // 3. Render animal emojis and goal decorations on the sides
+        const startPt = mapPoint(stroke[0]);
+        const endPt = mapPoint(stroke[stroke.length - 1]);
+
+        ctx.font = '36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const spriteEmoji = lvl.animal.split(' ').pop();
+        const goalEmoji = lvl.goal;
+
+        if (!isFinished) {
+          ctx.fillText(spriteEmoji, startPt.x, startPt.y - 45);
+        } else {
+          ctx.fillText(spriteEmoji, endPt.x - 30, endPt.y - 45);
+        }
+        ctx.fillText(goalEmoji, endPt.x, endPt.y + 45);
+      });
+
+      // 4. Draw toddler pencil trail markings
+      drawnSegments.forEach(segment => {
+        if (segment.length < 2) return;
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255, 71, 87, 0.85)'; // Chinese red ink brush feel
+        ctx.lineWidth = 14;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        segment.forEach((p, idx) => {
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+      });
+
+      // 5. Draw particles sparkles physics
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.decay;
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+        } else {
+          ctx.save();
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      ctx.restore();
+      requestAnimationFrame(draw);
+    }
+
+    // Touch check helper
+    const HIT_RADIUS = 50; // Big hit range for easy grip practice
+    function distance(p1, p2) {
+      return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+    }
+
+    // Pointer event interaction routines
+    function handlePointerDown(e) {
+      if (levelCompleted) return;
+      if (pencilOnlyMode && e.pointerType !== 'pen') return;
+
+      initAudio();
+      isDrawing = true;
+      const coords = getVirtualCoords(e);
+      drawnSegments.push([coords]);
+
+      const lvl = letterDefinitions[activeLetter];
+      lvl.strokes.forEach((stroke, strokeIdx) => {
+        const progress = strokeProgress[strokeIdx];
+        if (progress === stroke.length - 1) return; // finished
+
+        const nextIdx = progress + 1;
+        const nextNode = mapPoint(stroke[nextIdx]);
+
+        if (distance(coords, nextNode) < HIT_RADIUS) {
+          activeStrokeIndex = strokeIdx;
+          strokeProgress[strokeIdx] = nextIdx;
+          spawnStars(nextNode.x, nextNode.y, 8);
+          playTick();
+        }
+      });
+    }
+
+    function handlePointerMove(e) {
+      if (!isDrawing || levelCompleted) return;
+      if (pencilOnlyMode && e.pointerType !== 'pen') return;
+
+      const coords = getVirtualCoords(e);
+      const segment = drawnSegments[drawnSegments.length - 1];
+      if (segment) segment.push(coords);
+
+      const lvl = letterDefinitions[activeLetter];
+
+      if (activeStrokeIndex !== null) {
+        const stroke = lvl.strokes[activeStrokeIndex];
+        const progress = strokeProgress[activeStrokeIndex];
+        const nextIdx = progress + 1;
+
+        if (nextIdx < stroke.length) {
+          const nextNode = mapPoint(stroke[nextIdx]);
+          if (distance(coords, nextNode) < HIT_RADIUS) {
+            strokeProgress[activeStrokeIndex] = nextIdx;
+            spawnStars(nextNode.x, nextNode.y, 10);
+            playTick();
+
+            if (nextIdx === stroke.length - 1) {
+              playStrokeSuccess();
+              checkLevelCompletion();
+            }
+          }
+        }
+      } else {
+        lvl.strokes.forEach((stroke, strokeIdx) => {
+          const progress = strokeProgress[strokeIdx];
+          if (progress === stroke.length - 1) return;
+
+          const nextIdx = progress + 1;
+          const nextNode = mapPoint(stroke[nextIdx]);
+
+          if (distance(coords, nextNode) < HIT_RADIUS) {
+            activeStrokeIndex = strokeIdx;
+            strokeProgress[strokeIdx] = nextIdx;
+            spawnStars(nextNode.x, nextNode.y, 10);
+            playTick();
+
+            if (nextIdx === stroke.length - 1) {
+              playStrokeSuccess();
+              checkLevelCompletion();
+            }
+          }
+        });
+      }
+    }
+
+    function handlePointerUp() {
+      isDrawing = false;
+      activeStrokeIndex = null;
+    }
+
+    function checkLevelCompletion() {
+      const lvl = letterDefinitions[activeLetter];
+      const allCompleted = strokeProgress.every((progress, idx) => {
+        return progress === lvl.strokes[idx].length - 1;
+      });
+
+      if (allCompleted) {
+        levelCompleted = true;
+        isDrawing = false;
+
+        // Big screen burst effect
+        for (let i = 0; i < 4; i++) {
+          setTimeout(() => {
+            spawnStars(VIRTUAL_WIDTH/2 + (Math.random() - 0.5) * 400, VIRTUAL_HEIGHT/2 + (Math.random() - 0.5) * 200, 25);
+          }, i * 200);
+        }
+
+        playLevelSuccess();
+
+        // Populate popup labels
+        const emojiList = ["🎉", "⭐️", "🎈", "🦁", "🐨", "🐝", "🐰", "🏮", "🐼"];
+        document.getElementById('winEmoji').textContent = emojiList[Math.floor(Math.random() * emojiList.length)] + "✨" + emojiList[Math.floor(Math.random() * emojiList.length)];
+
+        setTimeout(() => {
+          document.getElementById('successOverlay').classList.add('show');
+        }, 800);
+      }
+    }
+
+    // Attach listeners
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointermove', handlePointerMove);
+    canvas.addEventListener('pointerup', handlePointerUp);
+    canvas.addEventListener('pointercancel', handlePointerUp);
+
+    // Menu setups and toggle controls
+    const stylusToggle = document.getElementById('stylusToggle');
+    stylusToggle.addEventListener('click', () => {
+      pencilOnlyMode = !pencilOnlyMode;
+      if (pencilOnlyMode) {
+        stylusToggle.classList.add('active');
+        stylusToggle.textContent = '✍️ Pencil Only';
+      } else {
+        stylusToggle.classList.remove('active');
+        stylusToggle.textContent = '🖐️ Finger + Pencil';
+      }
+    });
+
+    const menuSoundToggle = document.getElementById('menuSoundToggle');
+    const gameSoundToggle = document.getElementById('gameSoundToggle');
+
+    function toggleSounds() {
+      soundsEnabled = !soundsEnabled;
+      [menuSoundToggle, gameSoundToggle].forEach(btn => {
+        if (soundsEnabled) {
+          btn.classList.add('active');
+          btn.textContent = '🔊 Sounds';
+        } else {
+          btn.classList.remove('active');
+          btn.textContent = '🔇 Mute';
+        }
+      });
+    }
+
+    menuSoundToggle.addEventListener('click', toggleSounds);
+    gameSoundToggle.addEventListener('click', toggleSounds);
+
+    document.getElementById('clearBtn').addEventListener('click', loadLevelState);
+
+    // Next Level loader sequence
+    document.getElementById('nextLevelBtn').addEventListener('click', () => {
+      const charKeys = Object.keys(letterDefinitions).filter(char => {
+        return letterDefinitions[char].isNumber === numbersView;
+      });
+      const currIdx = charKeys.indexOf(activeLetter);
+      const nextIdx = (currIdx + 1) % charKeys.length;
+      startGameForLetter(charKeys[nextIdx]);
+    });
+
+    // Boot up Menu screen initially
+    renderLettersMenu();
+  </script>
+</body>
+</html>
