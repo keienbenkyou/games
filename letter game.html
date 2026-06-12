@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Toddler Pencil Quest!</title>
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%);
+      --card-bg: rgba(255, 255, 255, 0.9);
+      --primary-color: #ff6b81;
+      --secondary-color: #2ed573;
+      --dark-color: #2f3542;
+      --bubble-color: #70a1ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: var(--bg-gradient);
+      font-family: 'Comic Sans MS', 'Chalkboard SE', 'Fredoka One', sans-serif;
+      color: var(--dark-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Screen Management */
+    .screen {
+      display: none;
+      width: 100%;
+      height: 100%;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* Header Styles */
+    header {
+      width: 100%;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.45);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      z-index: 10;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      color: #ff4757;
+      text-shadow: 2px 2px 0px white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      border: none;
+      padding: 10px 20px;
+      border-radius: 22px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+      transition: transform 0.1s ease, background-color 0.2s;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+    }
+
+    .btn-toggle {
+      background-color: white;
+      color: var(--dark-color);
+      border: 2px solid #e17055;
+    }
+
+    .btn-toggle.active {
+      background-color: #e17055;
+      color: white;
+    }
+
+    .btn-primary {
+      background-color: var(--secondary-color);
+      color: white;
+    }
+
+    .btn-secondary {
+      background-color: var(--bubble-color);
+      color: white;
+    }
+
+    .btn-menu {
+      background-color: #ff9f43;
+      color: white;
+    }
+
+    /* Menu Screen Layout */
+    .menu-content {
+      width: 100%;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .menu-title {
+      font-size: 2.2rem;
+      color: #3742fa;
+      text-align: center;
+      margin: 10px 0 20px 0;
+      text-shadow: 2px 2px 0px white;
+    }
+
+    .menu-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 6px;
+      border-radius: 30px;
+      margin-bottom: 25px;
+      box-shadow: 0 6px 12px rgba(0,0,0,0.05);
+      border: 2px solid white;
+    }
+
+    .tab-btn {
+      border: none;
+      background: none;
+      padding: 12px 30px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      border-radius: 25px;
+      cursor: pointer;
+      color: #747d8c;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .tab-btn.active {
+      background-color: #3742fa;
+      color: white;
+      box-shadow: 0 4px 10px rgba(55, 66, 250, 0.3);
+    }
+
+    .letters-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 960px;
+      padding: 10px;
+    }
+
+    .letter-bubble {
+      background: white;
+      border: 4px solid white;
+      border-radius: 28px;
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .letter-bubble:active {
+      transform: scale(0.92);
+    }
+
+    .bubble-char {
+      font-size: 2.4rem;
+      font-weight: bold;
+      color: var(--dark-color);
+      margin-bottom: 4px;
+    }
+
+    .bubble-emoji {
+      font-size: 1.8rem;
+    }
+
+    /* Game Screen Layout */
+    .level-container {
+      width: 92%;
+      max-width: 900px;
+      margin-top: 12px;
+      text-align: center;
+      background: var(--card-bg);
+      padding: 12px 24px;
+      border-radius: 25px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+      border: 3px solid white;
+    }
+
+    .level-title {
+      font-size: 1.6rem;
+      margin: 0 0 4px 0;
+      color: #3742fa;
+    }
+
+    .level-desc {
+      font-size: 1.1rem;
+      margin: 0;
+      color: #57606f;
+    }
+
+    .game-area {
+      position: relative;
+      width: 92%;
+      max-width: 900px;
+      flex-grow: 1;
+      margin: 15px 0;
+      background: white;
+      border-radius: 30px;
+      box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+      border: 6px solid #ffbc00;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #gameCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    /* Overlays and Popups */
+    .overlay-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 24px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+      z-index: 5;
+    }
+
+    .overlay-container.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .win-text {
+      font-size: 2.6rem;
+      color: #ff4757;
+      text-shadow: 3px 3px 0 white;
+      margin-bottom: 24px;
+      animation: bounce 0.8s infinite alternate;
+    }
+
+    .win-emoji {
+      font-size: 5.5rem;
+      margin-bottom: 20px;
+    }
+
+    .overlay-buttons {
+      display: flex;
+      gap: 20px;
+    }
+
+    .big-btn {
+      font-size: 1.6rem;
+      padding: 16px 36px;
+      border: 4px solid white;
+      border-radius: 40px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+      transition: transform 0.1s;
+      font-family: inherit;
+    }
+
+    .big-btn:active {
+      transform: scale(0.95);
+    }
+
+    .big-btn-next {
+      background-color: var(--secondary-color);
+      color: white;
+    }
+
+    .big-btn-menu {
+      background-color: #ff9f43;
+      color: white;
+    }
+
+    @keyframes bounce {
+      from { transform: translateY(0); }
+      to { transform: translateY(-12px); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================= MENU SCREEN ================= -->
+  <div id="menuScreen" class="screen active">
+    <header>
+      <h1>🎨 Pencil Quest!</h1>
+      <div class="controls">
+        <button id="menuSoundToggle" class="btn btn-toggle active">🔊 Sounds</button>
+      </div>
+    </header>
+
+    <div class="menu-content">
+      <div class="menu-title">Pick a Letter to Practice! ✨</div>
+
+      <div class="menu-tabs">
+        <button id="tabUpper" class="tab-btn active">ABC (Uppercase)</button>
+        <button id="tabLower" class="tab-btn">abc (Lowercase)</button>
+      </div>
+
+      <div id="lettersGrid" class="letters-grid"></div>
+    </div>
+  </div>
+
+  <!-- ================= GAME SCREEN ================= -->
+  <div id="gameScreen" class="screen">
+    <header>
+      <button id="backToMenuBtn" class="btn btn-menu">🏠 Menu</button>
+      <h1>✍️ Tracing Play!</h1>
+      <div class="controls">
+        <button id="stylusToggle" class="btn btn-toggle active">✍️ Pencil Only</button>
+        <button id="gameSoundToggle" class="btn btn-toggle active">🔊 Sounds</button>
+        <button id="clearBtn" class="btn btn-secondary">🧹 Start Over</button>
+      </div>
+    </header>
+
+    <div class="level-container">
+      <h2 id="levelTitle" class="level-title">A is for Ant</h2>
+      <p id="levelDesc" class="level-desc">Trace the path!</p>
+    </div>
+
+    <div class="game-area" id="gameArea">
+      <canvas id="gameCanvas"></canvas>
+
+      <!-- Level Win Popup Overlay -->
+      <div class="overlay-container" id="successOverlay">
+        <div class="win-emoji" id="winEmoji">🎉</div>
+        <div class="win-text" id="winText">Awesome Writing!</div>
+        <div class="overlay-buttons">
+          <button id="overlayMenuBtn" class="big-btn big-btn-menu">🏠 Menu</button>
+          <button id="nextLevelBtn" class="big-btn big-btn-next">Next Letter ➜</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Colorful pastel colors for bubbles in menu grid
+    const bubbleColors = [
+      "#ffeaa7", "#ffb8b8", "#c7ecee", "#dff9fb", "#f8a5c2", "#f7d794",
+      "#eccc68", "#ff7f50", "#ff6b81", "#70a1ff", "#7bed9f", "#eccc68",
+      "#ffeaa7", "#ffb8b8", "#c7ecee", "#dff9fb", "#f8a5c2", "#f7d794",
+      "#eccc68", "#ff7f50", "#ff6b81", "#70a1ff", "#7bed9f", "#eccc68",
+      "#ffeaa7", "#ffb8b8"
+    ];
+
+    // Alphabet Database: Tracing strokes, animated emojis, and storytelling prompts
+    // All coordinates represent grid points from 0 to 100 within a centered layout container.
+    const letterDefinitions = {
+      // UPPERCASE LETTERS
+      'A': {
+        strokes: [
+          [{x:25, y:85}, {x:50, y:15}, {x:75, y:85}],
+          [{x:35, y:60}, {x:65, y:60}]
+        ],
+        animal: "Ant 🐜",
+        goal: "Leaf 🍃",
+        desc: "Help the Ant march up and down to find the juicy green leaf!"
+      },
+      'B': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:15}, {x:65, y:15}, {x:65, y:50}, {x:30, y:50}],
+          [{x:30, y:50}, {x:70, y:50}, {x:70, y:85}, {x:30, y:85}]
+        ],
+        animal: "Bee 🐝",
+        goal: "Flower 🌸",
+        desc: "Help the Bee buzz along the paths to reach the sweet flower!"
+      },
+      'C': {
+        strokes: [
+          [{x:75, y:25}, {x:50, y:15}, {x:25, y:30}, {x:25, y:70}, {x:50, y:85}, {x:75, y:75}]
+        ],
+        animal: "Cat 🐱",
+        goal: "Yarn 🧶",
+        desc: "Help the Cat trace a big sweep to catch the rolling yarn!"
+      },
+      'D': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:15}, {x:75, y:15}, {x:75, y:85}, {x:30, y:85}]
+        ],
+        animal: "Dog 🐶",
+        goal: "Bone 🦴",
+        desc: "Help the Dog run straight down and loop around to grab its bone!"
+      },
+      'E': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:15}, {x:70, y:15}],
+          [{x:30, y:50}, {x:60, y:50}],
+          [{x:30, y:85}, {x:70, y:85}]
+        ],
+        animal: "Elephant 🐘",
+        goal: "Peanut 🥜",
+        desc: "Help the Elephant walk the three steps to reach the peanut!"
+      },
+      'F': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:15}, {x:70, y:15}],
+          [{x:30, y:50}, {x:60, y:50}]
+        ],
+        animal: "Fox 🦊",
+        goal: "Forest 🌲",
+        desc: "Help the Fox trot along the branches to find its forest home!"
+      },
+      'G': {
+        strokes: [
+          [{x:75, y:25}, {x:50, y:15}, {x:25, y:30}, {x:25, y:70}, {x:50, y:85}, {x:75, y:85}, {x:75, y:55}, {x:55, y:55}]
+        ],
+        animal: "Giraffe 🦒",
+        goal: "Tree 🌳",
+        desc: "Help the Giraffe bend its neck and reach into the tall leafy tree!"
+      },
+      'H': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:70, y:15}, {x:70, y:85}],
+          [{x:30, y:50}, {x:70, y:50}]
+        ],
+        animal: "Hippo 🦛",
+        goal: "Watermelon 🍉",
+        desc: "Help the Hippo cross the river paths to crunch a watermelon!"
+      },
+      'I': {
+        strokes: [
+          [{x:50, y:15}, {x:50, y:85}],
+          [{x:35, y:15}, {x:65, y:15}],
+          [{x:35, y:85}, {x:65, y:85}]
+        ],
+        animal: "Iguana 🦎",
+        goal: "Bug 🐛",
+        desc: "Help the Iguana crawl straight along the branches to catch the bug!"
+      },
+      'J': {
+        strokes: [
+          [{x:60, y:15}, {x:60, y:70}, {x:45, y:85}, {x:30, y:75}]
+        ],
+        animal: "Jellyfish 🪼",
+        goal: "Ocean 🌊",
+        desc: "Help the Jellyfish slide down and splash into the warm ocean!"
+      },
+      'K': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:65, y:15}, {x:30, y:50}],
+          [{x:30, y:50}, {x:65, y:85}]
+        ],
+        animal: "Koala 🐨",
+        goal: "Eucalyptus 🌿",
+        desc: "Help the Koala climb up and slide down branches to get leaves!"
+      },
+      'L': {
+        strokes: [
+          [{x:35, y:15}, {x:35, y:85}, {x:70, y:85}]
+        ],
+        animal: "Lion 🦁",
+        goal: "Meat 🥩",
+        desc: "Help the Lion crawl straight down and across to eat its steak!"
+      },
+      'M': {
+        strokes: [
+          [{x:20, y:85}, {x:20, y:15}, {x:50, y:60}, {x:80, y:15}, {x:80, y:85}]
+        ],
+        animal: "Monkey 🐵",
+        goal: "Banana 🍌",
+        desc: "Help the Monkey swing up, down, and up again for a banana!"
+      },
+      'N': {
+        strokes: [
+          [{x:25, y:85}, {x:25, y:15}],
+          [{x:25, y:15}, {x:75, y:85}, {x:75, y:15}]
+        ],
+        animal: "Newt 🦎",
+        goal: "Log 🪵",
+        desc: "Help the Newt crawl up, down, and straight up to find the log!"
+      },
+      'O': {
+        strokes: [
+          [{x:50, y:15}, {x:75, y:20}, {x:80, y:50}, {x:75, y:80}, {x:50, y:85}, {x:25, y:80}, {x:20, y:50}, {x:25, y:20}, {x:50, y:15}]
+        ],
+        animal: "Owl 🦉",
+        goal: "Nest 🪺",
+        desc: "Help the Owl fly in a big beautiful circle back to its nest!"
+      },
+      'P': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:15}, {x:70, y:15}, {x:70, y:50}, {x:30, y:50}]
+        ],
+        animal: "Panda 🐼",
+        goal: "Bamboo 🎍",
+        desc: "Help the Panda climb down the shoot and loop to chew bamboo!"
+      },
+      'Q': {
+        strokes: [
+          [{x:50, y:15}, {x:75, y:20}, {x:80, y:50}, {x:75, y:80}, {x:50, y:85}, {x:25, y:80}, {x:20, y:50}, {x:25, y:20}, {x:50, y:15}],
+          [{x:55, y:60}, {x:75, y:85}]
+        ],
+        animal: "Quail 🐦",
+        goal: "Seed 🌾",
+        desc: "Help the Quail fly in a round circle and slide down to eat seeds!"
+      },
+      'R': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:15}, {x:70, y:15}, {x:70, y:50}, {x:30, y:50}],
+          [{x:45, y:50}, {x:70, y:85}]
+        ],
+        animal: "Rabbit 🐰",
+        goal: "Carrot 🥕",
+        desc: "Help the Bunny hop down, make a loop, and slide to the carrot!"
+      },
+      'S': {
+        strokes: [
+          [{x:70, y:25}, {x:50, y:15}, {x:30, y:30}, {x:50, y:50}, {x:70, y:70}, {x:50, y:85}, {x:30, y:75}]
+        ],
+        animal: "Snake 🐍",
+        goal: "Rock 🪨",
+        desc: "Help the Snake slither left and right to rest on the warm rock!"
+      },
+      'T': {
+        strokes: [
+          [{x:50, y:15}, {x:50, y:85}],
+          [{x:25, y:15}, {x:75, y:15}]
+        ],
+        animal: "Tiger 🐯",
+        goal: "Jungle 🌴",
+        desc: "Help the Tiger walk down the path and along the jungle tree tops!"
+      },
+      'U': {
+        strokes: [
+          [{x:25, y:15}, {x:25, y:65}, {x:50, y:85}, {x:75, y:65}, {x:75, y:15}]
+        ],
+        animal: "Unicorn 🦄",
+        goal: "Rainbow 🌈",
+        desc: "Help the Unicorn slide down and swoop back up to the rainbow!"
+      },
+      'V': {
+        strokes: [
+          [{x:20, y:15}, {x:50, y:85}, {x:80, y:15}]
+        ],
+        animal: "Bat 🦇",
+        goal: "Cave 🪨",
+        desc: "Help the Bat swoop down into the dark, cozy cave!"
+      },
+      'W': {
+        strokes: [
+          [{x:15, y:15}, {x:30, y:85}, {x:50, y:45}, {x:70, y:85}, {x:85, y:15}]
+        ],
+        animal: "Whale 🐳",
+        goal: "Spout 🐳",
+        desc: "Help the Whale dive and splash up, down, and up to its spout!"
+      },
+      'X': {
+        strokes: [
+          [{x:25, y:15}, {x:75, y:85}],
+          [{x:75, y:15}, {x:25, y:85}]
+        ],
+        animal: "X-ray Fish 🐟",
+        goal: "Coral 🪸",
+        desc: "Help the glowing fish swim in cross directions to the coral!"
+      },
+      'Y': {
+        strokes: [
+          [{x:25, y:15}, {x:50, y:50}, {x:75, y:15}],
+          [{x:50, y:50}, {x:50, y:85}]
+        ],
+        animal: "Yak 🐂",
+        goal: "Grass 🌾",
+        desc: "Help the Yak climb down the hills to reach the green pasture!"
+      },
+      'Z': {
+        strokes: [
+          [{x:25, y:15}, {x:75, y:15}, {x:25, y:85}, {x:75, y:85}]
+        ],
+        animal: "Zebra 🦓",
+        goal: "Savanna 🌾",
+        desc: "Help the Zebra zig-zag across the fields to the grassy plains!"
+      },
+
+      // LOWERCASE LETTERS
+      'a': {
+        strokes: [
+          [{x:70, y:35}, {x:70, y:85}],
+          [{x:70, y:50}, {x:45, y:40}, {x:35, y:60}, {x:45, y:80}, {x:70, y:75}]
+        ],
+        animal: "Ant 🐜",
+        goal: "Leaf 🍃",
+        desc: "Help the little ant trace its circle and straight stem!"
+      },
+      'b': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:50}, {x:55, y:45}, {x:65, y:65}, {x:55, y:85}, {x:30, y:80}]
+        ],
+        animal: "Bee 🐝",
+        goal: "Flower 🌸",
+        desc: "Help the little bee trace the tall line and fat bubble!"
+      },
+      'c': {
+        strokes: [
+          [{x:65, y:50}, {x:45, y:40}, {x:30, y:60}, {x:45, y:80}, {x:65, y:70}]
+        ],
+        animal: "Cat 🐱",
+        goal: "Yarn 🧶",
+        desc: "Help the little cat sweep in a curve to catch the ball!"
+      },
+      'd': {
+        strokes: [
+          [{x:70, y:15}, {x:70, y:85}],
+          [{x:70, y:50}, {x:45, y:45}, {x:35, y:65}, {x:45, y:85}, {x:70, y:80}]
+        ],
+        animal: "Dog 🐶",
+        goal: "Bone 🦴",
+        desc: "Help the puppy trace the tall post and happy tail!"
+      },
+      'e': {
+        strokes: [
+          [{x:30, y:65}, {x:65, y:65}, {x:65, y:45}, {x:45, y:40}, {x:30, y:60}, {x:45, y:80}, {x:65, y:75}]
+        ],
+        animal: "Elephant 🐘",
+        goal: "Peanut 🥜",
+        desc: "Help the baby elephant swoop across and round for its peanut!"
+      },
+      'f': {
+        strokes: [
+          [{x:65, y:20}, {x:50, y:15}, {x:45, y:30}, {x:45, y:85}],
+          [{x:30, y:40}, {x:60, y:40}]
+        ],
+        animal: "Fox 🦊",
+        goal: "Forest 🌲",
+        desc: "Help the little fox trace the hook and cross the branch!"
+      },
+      'g': {
+        strokes: [
+          [{x:70, y:40}, {x:45, y:35}, {x:35, y:55}, {x:45, y:75}, {x:70, y:70}],
+          [{x:70, y:70}, {x:70, y:90}, {x:55, y:100}, {x:40, y:95}]
+        ],
+        animal: "Giraffe 🦒",
+        goal: "Tree 🌳",
+        desc: "Help the little giraffe trace the ball and hook down for leaves!"
+      },
+      'h': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:30, y:50}, {x:45, y:40}, {x:65, y:55}, {x:65, y:85}]
+        ],
+        animal: "Hippo 🦛",
+        goal: "Watermelon 🍉",
+        desc: "Help the hippo trace the line and hump to the melon!"
+      },
+      'i': {
+        strokes: [
+          [{x:50, y:35}, {x:50, y:85}],
+          [{x:50, y:15}, {x:50, y:16}]
+        ],
+        animal: "Iguana 🦎",
+        goal: "Bug 🐛",
+        desc: "Help the little iguana draw the straight line and tiny top dot!"
+      },
+      'j': {
+        strokes: [
+          [{x:55, y:35}, {x:55, y:80}, {x:40, y:95}, {x:25, y:90}],
+          [{x:55, y:15}, {x:55, y:16}]
+        ],
+        animal: "Jellyfish 🪼",
+        goal: "Ocean 🌊",
+        desc: "Help the jellyfish trace the tail and dot to swim in the sea!"
+      },
+      'k': {
+        strokes: [
+          [{x:30, y:15}, {x:30, y:85}],
+          [{x:60, y:45}, {x:30, y:65}],
+          [{x:30, y:65}, {x:60, y:85}]
+        ],
+        animal: "Koala 🐨",
+        goal: "Eucalyptus 🌿",
+        desc: "Help the baby koala climb the tall branch and side twigs!"
+      },
+      'l': {
+        strokes: [
+          [{x:45, y:15}, {x:45, y:85}]
+        ],
+        animal: "Lion 🦁",
+        goal: "Meat 🥩",
+        desc: "Help the lion make one simple straight slide downwards!"
+      },
+      'm': {
+        strokes: [
+          [{x:20, y:40}, {x:20, y:85}],
+          [{x:20, y:55}, {x:35, y:40}, {x:45, y:55}, {x:45, y:85}],
+          [{x:45, y:55}, {x:60, y:40}, {x:75, y:55}, {x:75, y:85}]
+        ],
+        animal: "Monkey 🐵",
+        goal: "Banana 🍌",
+        desc: "Help the monkey trace the straight line and double jumps!"
+      },
+      'n': {
+        strokes: [
+          [{x:30, y:40}, {x:30, y:85}],
+          [{x:30, y:55}, {x:50, y:40}, {x:65, y:55}, {x:65, y:85}]
+        ],
+        animal: "Newt 🦎",
+        goal: "Log 🪵",
+        desc: "Help the little newt trace down and jump over the hump!"
+      },
+      'o': {
+        strokes: [
+          [{x:50, y:40}, {x:65, y:45}, {x:70, y:65}, {x:65, y:80}, {x:50, y:85}, {x:35, y:80}, {x:30, y:65}, {x:35, y:45}, {x:50, y:40}]
+        ],
+        animal: "Owl 🦉",
+        goal: "Nest 🪺",
+        desc: "Help the baby owl fly in a round circle to get cozy!"
+      },
+      'p': {
+        strokes: [
+          [{x:30, y:40}, {x:30, y:100}],
+          [{x:30, y:55}, {x:55, y:45}, {x:65, y:65}, {x:55, y:85}, {x:30, y:80}]
+        ],
+        animal: "Panda 🐼",
+        goal: "Bamboo 🎍",
+        desc: "Help the baby panda trace the long line and rounded belly!"
+      },
+      'q': {
+        strokes: [
+          [{x:65, y:40}, {x:65, y:100}],
+          [{x:65, y:55}, {x:40, y:45}, {x:30, y:65}, {x:40, y:85}, {x:65, y:80}]
+        ],
+        animal: "Quail 🐦",
+        goal: "Seed 🌾",
+        desc: "Help the little quail trace its body and long straight tail!"
+      },
+      'r': {
+        strokes: [
+          [{x:35, y:40}, {x:35, y:85}],
+          [{x:35, y:55}, {x:50, y:40}, {x:60, y:45}]
+        ],
+        animal: "Rabbit 🐰",
+        goal: "Carrot 🥕",
+        desc: "Help the baby bunny hop down and make a little bend!"
+      },
+      's': {
+        strokes: [
+          [{x:60, y:45}, {x:45, y:40}, {x:35, y:55}, {x:50, y:65}, {x:60, y:75}, {x:45, y:85}, {x:30, y:75}]
+        ],
+        animal: "Snake 🐍",
+        goal: "Rock 🪨",
+        desc: "Help the little snake trace a mini slither to the rock!"
+      },
+      't': {
+        strokes: [
+          [{x:45, y:20}, {x:45, y:80}, {x:60, y:85}],
+          [{x:30, y:35}, {x:60, y:35}]
+        ],
+        animal: "Tiger 🐯",
+        goal: "Jungle 🌴",
+        desc: "Help the little tiger trace down, curve, and cross the path!"
+      },
+      'u': {
+        strokes: [
+          [{x:30, y:40}, {x:30, y:75}, {x:50, y:85}, {x:65, y:75}, {x:65, y:40}],
+          [{x:65, y:65}, {x:65, y:85}]
+        ],
+        animal: "Unicorn 🦄",
+        goal: "Rainbow 🌈",
+        desc: "Help the baby unicorn swoop down, up, and pull down its leg!"
+      },
+      'v': {
+        strokes: [
+          [{x:30, y:40}, {x:50, y:85}, {x:70, y:40}]
+        ],
+        animal: "Bat 🦇",
+        goal: "Cave 🪨",
+        desc: "Help the little bat fly down and up to its cozy cave!"
+      },
+      'w': {
+        strokes: [
+          [{x:20, y:40}, {x:35, y:85}, {x:50, y:55}, {x:65, y:85}, {x:80, y:40}]
+        ],
+        animal: "Whale 🐳",
+        goal: "Spout 🐳",
+        desc: "Help the baby whale swim down, up, down, and up!"
+      },
+      'x': {
+        strokes: [
+          [{x:30, y:40}, {x:70, y:85}],
+          [{x:70, y:40}, {x:30, y:85}]
+        ],
+        animal: "X-ray Fish 🐟",
+        goal: "Coral 🪸",
+        desc: "Help the little fish trace two crossing paths in the water!"
+      },
+      'y': {
+        strokes: [
+          [{x:30, y:40}, {x:50, y:75}, {x:70, y:40}],
+          [{x:50, y:75}, {x:30, y:100}]
+        ],
+        animal: "Yak 🐂",
+        goal: "Grass 🌾",
+        desc: "Help the little yak swoop down, up, and slide into the valley!"
+      },
+      'z': {
+        strokes: [
+          [{x:30, y:40}, {x:65, y:40}, {x:30, y:85}, {x:65, y:85}]
+        ],
+        animal: "Zebra 🦓",
+        goal: "Savanna 🌾",
+        desc: "Help the baby zebra trace zig-zag stripes across the grass!"
+      }
+    };
+
+    // Global state
+    let activeLetter = 'A';
+    let uppercaseView = true;
+    let pencilOnlyMode = true;
+    let soundsEnabled = true;
+    let isDrawing = false;
+    let drawnSegments = []; // Array of arrays of {x,y} drawn coordinates
+    let activeStrokeIndex = null;
+    let strokeProgress = []; // Trace completion indices for current activeLetter
+    let levelCompleted = false;
+
+    // Dimensions
+    const VIRTUAL_WIDTH = 900;
+    const VIRTUAL_HEIGHT = 600;
+
+    // Particles array for sparkles
+    let particles = [];
+
+    // Synthesizer Audio
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playTick() {
+      if (!soundsEnabled) return;
+      initAudio();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(550, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(850, audioCtx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.08);
+    }
+
+    function playStrokeSuccess() {
+      if (!soundsEnabled) return;
+      initAudio();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const notes = [329.63, 392.00, 523.25, 659.25]; // E G C E notes
+      const duration = 0.12;
+      notes.forEach((freq, index) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime + index * 0.08);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime + index * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + index * 0.08 + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(audioCtx.currentTime + index * 0.08);
+        osc.stop(audioCtx.currentTime + index * 0.08 + duration);
+      });
+    }
+
+    function playLevelSuccess() {
+      if (!soundsEnabled) return;
+      initAudio();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const chords = [
+        { freq: [261.63, 329.63, 392.00], time: 0 },
+        { freq: [349.23, 440.00, 523.25], time: 0.25 },
+        { freq: [392.00, 493.88, 587.33], time: 0.5 },
+        { freq: [523.25, 659.25, 783.99, 1046.50], time: 0.75 }
+      ];
+      chords.forEach((chord) => {
+        chord.freq.forEach((freq) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + chord.time);
+          gain.gain.setValueAtTime(0.08, audioCtx.currentTime + chord.time);
+          gain.gain.exponentialRampToValueAtTime(0.001, chord.time + 0.5);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + chord.time);
+          osc.stop(audioCtx.currentTime + chord.time + 0.6);
+        });
+      });
+    }
+
+    // Dynamic scale helper matching standard coordinates into centered sandbox area
+    // Maps standard (0 to 100) range into square width/height inside virtual canvas
+    function mapPoint(p) {
+      return {
+        x: 230 + (p.x / 100) * 440,
+        y: 80 + (p.y / 100) * 440
+      };
+    }
+
+    // DOM Setup
+    const menuScreen = document.getElementById('menuScreen');
+    const gameScreen = document.getElementById('gameScreen');
+    const lettersGrid = document.getElementById('lettersGrid');
+
+    // Tab toggles
+    const tabUpper = document.getElementById('tabUpper');
+    const tabLower = document.getElementById('tabLower');
+
+    // Build the grid selectors for letter choice
+    function renderLettersMenu() {
+      lettersGrid.innerHTML = '';
+      const lettersList = uppercaseView
+        ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('')
+        : "abcdefghijklmnopqrstuvwxyz".split('');
+
+      lettersList.forEach((char, idx) => {
+        const item = letterDefinitions[char];
+        const bubble = document.createElement('div');
+        bubble.className = 'letter-bubble';
+        bubble.style.backgroundColor = bubbleColors[idx % bubbleColors.length];
+
+        const charSpan = document.createElement('span');
+        charSpan.className = 'bubble-char';
+        charSpan.textContent = char;
+
+        const emojiSpan = document.createElement('span');
+        emojiSpan.className = 'bubble-emoji';
+        emojiSpan.textContent = item.animal.split(' ').pop(); // Select just emoji
+
+        bubble.appendChild(charSpan);
+        bubble.appendChild(emojiSpan);
+
+        bubble.addEventListener('click', () => {
+          initAudio();
+          startGameForLetter(char);
+        });
+
+        lettersGrid.appendChild(bubble);
+      });
+    }
+
+    // Toggle menu displays
+    tabUpper.addEventListener('click', () => {
+      uppercaseView = true;
+      tabUpper.classList.add('active');
+      tabLower.classList.remove('active');
+      renderLettersMenu();
+    });
+
+    tabLower.addEventListener('click', () => {
+      uppercaseView = false;
+      tabLower.classList.add('active');
+      tabUpper.classList.remove('active');
+      renderLettersMenu();
+    });
+
+    // Load Letter Tracing Scene
+    function startGameForLetter(char) {
+      activeLetter = char;
+      menuScreen.classList.remove('active');
+      gameScreen.classList.add('active');
+
+      resizeCanvas();
+      loadLevelState();
+    }
+
+    // Go back to letter lists
+    function exitToMenu() {
+      gameScreen.classList.remove('active');
+      menuScreen.classList.add('active');
+      renderLettersMenu();
+    }
+
+    document.getElementById('backToMenuBtn').addEventListener('click', exitToMenu);
+    document.getElementById('overlayMenuBtn').addEventListener('click', exitToMenu);
+
+    // Canvas Setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gameArea = document.getElementById('gameArea');
+
+    function resizeCanvas() {
+      canvas.width = gameArea.clientWidth;
+      canvas.height = gameArea.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // Get input coordinate inside 900x600 virtual container
+    function getVirtualCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+      const x = (clientX - rect.left) * (VIRTUAL_WIDTH / rect.width);
+      const y = (clientY - rect.top) * (VIRTUAL_HEIGHT / rect.height);
+      return { x, y };
+    }
+
+    function loadLevelState() {
+      levelCompleted = false;
+      isDrawing = false;
+      drawnSegments = [];
+      activeStrokeIndex = null;
+      particles = [];
+
+      const lvl = letterDefinitions[activeLetter];
+      document.getElementById('levelTitle').textContent = `${activeLetter} is for ${lvl.animal}`;
+      document.getElementById('levelDesc').textContent = lvl.desc;
+
+      // Reset node progress trackers
+      strokeProgress = lvl.strokes.map(() => -1);
+
+      document.getElementById('successOverlay').classList.remove('show');
+      draw();
+    }
+
+    // Sparkle generator
+    function spawnStars(x, y, count = 5) {
+      for(let i = 0; i < count; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          size: Math.random() * 8 + 4,
+          color: `hsl(${Math.random() * 360}, 100%, 70%)`,
+          alpha: 1,
+          decay: Math.random() * 0.02 + 0.01
+        });
+      }
+    }
+
+    // Draw Mechanics Loop
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      const scaleX = canvas.width / VIRTUAL_WIDTH;
+      const scaleY = canvas.height / VIRTUAL_HEIGHT;
+      ctx.scale(scaleX, scaleY);
+
+      const lvl = letterDefinitions[activeLetter];
+
+      // 1. Render all trace tracks
+      lvl.strokes.forEach((stroke, strokeIdx) => {
+        const progressIdx = strokeProgress[strokeIdx];
+        const isFinished = progressIdx === stroke.length - 1;
+
+        // Base background guide path
+        ctx.beginPath();
+        ctx.strokeStyle = isFinished ? 'rgba(46, 213, 115, 0.25)' : 'rgba(230, 234, 240, 0.9)';
+        ctx.lineWidth = 32;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        stroke.forEach((pRaw, idx) => {
+          const p = mapPoint(pRaw);
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+
+        // Inner dashed guides (looks like tiny roads)
+        ctx.beginPath();
+        ctx.strokeStyle = isFinished ? '#2ed573' : '#a4b0be';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 10]);
+        stroke.forEach((pRaw, idx) => {
+          const p = mapPoint(pRaw);
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset dashed formatting
+
+        // Draw start helpers (arrow direction markers)
+        if (!isFinished && stroke.length > 1) {
+          const startPt = mapPoint(stroke[0]);
+          const nextPt = mapPoint(stroke[1]);
+          const angle = Math.atan2(nextPt.y - startPt.y, nextPt.x - startPt.x);
+
+          ctx.save();
+          ctx.translate(startPt.x, startPt.y);
+          ctx.rotate(angle);
+          ctx.fillStyle = '#ff6b81';
+          ctx.beginPath();
+          ctx.moveTo(35, 0);
+          ctx.lineTo(20, -10);
+          ctx.lineTo(20, 10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 2. Render checkpoints / Target points
+        stroke.forEach((pRaw, pIdx) => {
+          const p = mapPoint(pRaw);
+          const isCompleted = pIdx <= progressIdx;
+          const isCurrentTarget = pIdx === progressIdx + 1 && !isFinished;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, isCurrentTarget ? 16 : 10, 0, Math.PI * 2);
+
+          if (isCompleted) {
+            ctx.fillStyle = '#2ed573';
+          } else if (isCurrentTarget) {
+            const pulse = Math.sin(Date.now() / 150) * 3;
+            ctx.fillStyle = '#ffbc00';
+            ctx.arc(p.x, p.y, 16 + pulse, 0, Math.PI * 2);
+          } else {
+            ctx.fillStyle = '#ced6e0';
+          }
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'white';
+          ctx.stroke();
+        });
+
+        // 3. Render animal emojis and goal decorations on the sides
+        const startPt = mapPoint(stroke[0]);
+        const endPt = mapPoint(stroke[stroke.length - 1]);
+
+        ctx.font = '36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const spriteEmoji = lvl.animal.split(' ').pop();
+        const goalEmoji = lvl.goal;
+
+        if (!isFinished) {
+          ctx.fillText(spriteEmoji, startPt.x, startPt.y - 45);
+        } else {
+          ctx.fillText(spriteEmoji, endPt.x - 30, endPt.y - 45);
+        }
+        ctx.fillText(goalEmoji, endPt.x, endPt.y + 45);
+      });
+
+      // 4. Draw toddler pencil trail markings
+      drawnSegments.forEach(segment => {
+        if (segment.length < 2) return;
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255, 107, 129, 0.85)';
+        ctx.lineWidth = 14;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        segment.forEach((p, idx) => {
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+      });
+
+      // 5. Draw particles sparkles physics
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.decay;
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+        } else {
+          ctx.save();
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      ctx.restore();
+      requestAnimationFrame(draw);
+    }
+
+    // Touch check helper
+    const HIT_RADIUS = 50; // Big hit range for easy grip practice
+    function distance(p1, p2) {
+      return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+    }
+
+    // Pointer event interaction routines
+    function handlePointerDown(e) {
+      if (levelCompleted) return;
+      if (pencilOnlyMode && e.pointerType !== 'pen') return;
+
+      initAudio();
+      isDrawing = true;
+      const coords = getVirtualCoords(e);
+      drawnSegments.push([coords]);
+
+      const lvl = letterDefinitions[activeLetter];
+      lvl.strokes.forEach((stroke, strokeIdx) => {
+        const progress = strokeProgress[strokeIdx];
+        if (progress === stroke.length - 1) return; // finished
+
+        const nextIdx = progress + 1;
+        const nextNode = mapPoint(stroke[nextIdx]);
+
+        if (distance(coords, nextNode) < HIT_RADIUS) {
+          activeStrokeIndex = strokeIdx;
+          strokeProgress[strokeIdx] = nextIdx;
+          spawnStars(nextNode.x, nextNode.y, 8);
+          playTick();
+        }
+      });
+    }
+
+    function handlePointerMove(e) {
+      if (!isDrawing || levelCompleted) return;
+      if (pencilOnlyMode && e.pointerType !== 'pen') return;
+
+      const coords = getVirtualCoords(e);
+      const segment = drawnSegments[drawnSegments.length - 1];
+      if (segment) segment.push(coords);
+
+      const lvl = letterDefinitions[activeLetter];
+
+      if (activeStrokeIndex !== null) {
+        const stroke = lvl.strokes[activeStrokeIndex];
+        const progress = strokeProgress[activeStrokeIndex];
+        const nextIdx = progress + 1;
+
+        if (nextIdx < stroke.length) {
+          const nextNode = mapPoint(stroke[nextIdx]);
+          if (distance(coords, nextNode) < HIT_RADIUS) {
+            strokeProgress[activeStrokeIndex] = nextIdx;
+            spawnStars(nextNode.x, nextNode.y, 10);
+            playTick();
+
+            if (nextIdx === stroke.length - 1) {
+              playStrokeSuccess();
+              checkLevelCompletion();
+            }
+          }
+        }
+      } else {
+        lvl.strokes.forEach((stroke, strokeIdx) => {
+          const progress = strokeProgress[strokeIdx];
+          if (progress === stroke.length - 1) return;
+
+          const nextIdx = progress + 1;
+          const nextNode = mapPoint(stroke[nextIdx]);
+
+          if (distance(coords, nextNode) < HIT_RADIUS) {
+            activeStrokeIndex = strokeIdx;
+            strokeProgress[strokeIdx] = nextIdx;
+            spawnStars(nextNode.x, nextNode.y, 10);
+            playTick();
+
+            if (nextIdx === stroke.length - 1) {
+              playStrokeSuccess();
+              checkLevelCompletion();
+            }
+          }
+        });
+      }
+    }
+
+    function handlePointerUp() {
+      isDrawing = false;
+      activeStrokeIndex = null;
+    }
+
+    function checkLevelCompletion() {
+      const lvl = letterDefinitions[activeLetter];
+      const allCompleted = strokeProgress.every((progress, idx) => {
+        return progress === lvl.strokes[idx].length - 1;
+      });
+
+      if (allCompleted) {
+        levelCompleted = true;
+        isDrawing = false;
+
+        // Big screen burst effect
+        for (let i = 0; i < 4; i++) {
+          setTimeout(() => {
+            spawnStars(VIRTUAL_WIDTH/2 + (Math.random() - 0.5) * 400, VIRTUAL_HEIGHT/2 + (Math.random() - 0.5) * 200, 25);
+          }, i * 200);
+        }
+
+        playLevelSuccess();
+
+        // Populate popup labels
+        const emojiList = ["🎉", "⭐️", "🎈", "🦁", "🐨", "🐝", "🐰"];
+        document.getElementById('winEmoji').textContent = emojiList[Math.floor(Math.random() * emojiList.length)] + "✨" + emojiList[Math.floor(Math.random() * emojiList.length)];
+
+        setTimeout(() => {
+          document.getElementById('successOverlay').classList.add('show');
+        }, 800);
+      }
+    }
+
+    // Attach listeners
+    canvas.addEventListener('pointerdown', handlePointerDown);
+    canvas.addEventListener('pointermove', handlePointerMove);
+    canvas.addEventListener('pointerup', handlePointerUp);
+    canvas.addEventListener('pointercancel', handlePointerUp);
+
+    // Menu setups and toggle controls
+    const stylusToggle = document.getElementById('stylusToggle');
+    stylusToggle.addEventListener('click', () => {
+      pencilOnlyMode = !pencilOnlyMode;
+      if (pencilOnlyMode) {
+        stylusToggle.classList.add('active');
+        stylusToggle.textContent = '✍️ Pencil Only';
+      } else {
+        stylusToggle.classList.remove('active');
+        stylusToggle.textContent = '🖐️ Finger + Pencil';
+      }
+    });
+
+    const menuSoundToggle = document.getElementById('menuSoundToggle');
+    const gameSoundToggle = document.getElementById('gameSoundToggle');
+
+    function toggleSounds() {
+      soundsEnabled = !soundsEnabled;
+      [menuSoundToggle, gameSoundToggle].forEach(btn => {
+        if (soundsEnabled) {
+          btn.classList.add('active');
+          btn.textContent = '🔊 Sounds';
+        } else {
+          btn.classList.remove('active');
+          btn.textContent = '🔇 Mute';
+        }
+      });
+    }
+
+    menuSoundToggle.addEventListener('click', toggleSounds);
+    gameSoundToggle.addEventListener('click', toggleSounds);
+
+    document.getElementById('clearBtn').addEventListener('click', loadLevelState);
+
+    // Next Level loader sequence
+    document.getElementById('nextLevelBtn').addEventListener('click', () => {
+      const alpha = uppercaseView
+        ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        : "abcdefghijklmnopqrstuvwxyz";
+      const currIdx = alpha.indexOf(activeLetter);
+      const nextIdx = (currIdx + 1) % alpha.length;
+      startGameForLetter(alpha[nextIdx]);
+    });
+
+    // Boot up Menu screen initially
+    renderLettersMenu();
+  </script>
+</body>
+</html>
